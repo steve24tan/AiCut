@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="本地分段素材、Prompt 与修改记录工作台">
+  <title>逐段 · Shot Workbench</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">▤</span><div>逐段<span class="brand-en">SHOT WORKBENCH</span></div></div>
+    <div class="sidebar-caption">你的创作项目 <button id="new-project" class="icon" title="新建项目" aria-label="新建项目">＋</button></div>
+    <nav id="projects" aria-label="项目列表"></nav>
+    <div class="sidebar-bottom"><span class="local-dot"></span> 本机工作空间<div>素材与记录保存在这台电脑</div><button id="help" class="text-button">使用与备份说明 ↗</button></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>工作空间 <span class="slash">/</span> 分镜工作台</span><span id="save-state" role="status">正在连接本地服务…</span></header>
+    <section class="workspace">
+      <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
+      <div class="board-bar"><div class="filters" role="group" aria-label="按状态筛选"><button data-filter="all" class="selected">全部片段 <span id="total">0</span></button><button data-filter="revise">待微调</button><button data-filter="approved">已确认</button></div><span class="board-hint">编号随顺序更新 · 用箭头调整顺序</span></div>
+      <div id="empty" class="empty"><span class="empty-mark">▤</span><h2>把想法拆成容易修改的小段</h2><p>建立一个项目，添加片段，再把视频、Prompt 和修改要求放在一起。</p><button id="empty-create" class="primary">创建第一个项目</button></div>
+      <div id="shots" class="shot-grid" aria-live="polite"></div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="name-dialog"><form id="name-form"><div class="dialog-head"><h2 id="name-heading">新建项目</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div><label for="name-input">名称</label><input id="name-input" maxlength="200" required autocomplete="off"><div class="dialog-actions"><button type="button" data-close>取消</button><button class="primary" type="submit">创建</button></div></form></dialog>
+  <dialog id="text-dialog"><div class="dialog-head"><h2 id="text-heading"></h2><button data-close class="icon" aria-label="关闭">×</button></div><p id="text-description"></p><textarea id="text-content" readonly rows="16"></textarea><div class="dialog-actions"><button data-close>关闭</button></div></dialog>
+  <input id="file-input" type="file" accept=".mp4,.webm,.mov,.png,.jpg,.jpeg,.webp" multiple hidden>
+  <template id="shot-template">
+    <article class="shot-card">
+      <div class="card-head"><span class="shot-number"></span><input class="shot-title" data-field="title" aria-label="片段名称" maxlength="200"><div class="move-actions"><button class="icon move-up" title="前移" aria-label="前移">←</button><button class="icon move-down" title="后移" aria-label="后移">→</button></div></div>
+      <div class="media-stage"><div class="media-placeholder"><span>＋</span><p>放入这一段的画面</p><small>导入视频或图片，也可以先写 Prompt</small></div></div>
+      <div class="take-bar"><span class="take-label">采用版本</span><select class="take-select" aria-label="选择采用版本"></select><button class="text-button inspect-take">查看快照</button></div>
+      <div class="card-body"><label class="field-label">PROMPT <span>下一版草稿</span><textarea data-field="prompt" rows="4" maxlength="50000" placeholder="描述这一段的画面、动作或内容…"></textarea></label><label class="field-label note-label">修改要求 <span>这一段，哪里需要调整？</span><textarea data-field="notes" rows="3" maxlength="50000" placeholder="例如：转头慢一点，最后停顿一秒，人物脸型保持一致。"></textarea></label></div>
+      <div class="card-footer"><select class="shot-status" data-field="status" aria-label="片段状态"><option value="todo">○ 待生成</option><option value="revise">◐ 待微调</option><option value="review">◉ 待检查</option><option value="approved">● 已确认</option></select><span class="card-save"></span></div>
+      <div class="card-actions"><button class="copy-request primary">复制本段修改请求 ↗</button><button class="import-take" title="导入素材并保存当前 Prompt 和备注">导入新版</button><button class="snapshot" title="只保存当前 Prompt 和备注为一个文字版本">存快照</button></div>
+    </article>
+  </template>
+</body>
+</html>

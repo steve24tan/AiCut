@@ -1,0 +1,15 @@
+data/
+backups/
+test-results/
+node_modules/
+*.log
+restored-data*/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.part
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

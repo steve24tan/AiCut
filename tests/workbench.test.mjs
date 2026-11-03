@@ -1,0 +1,116 @@
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, readdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createApp } from '../server.mjs';
+import { backupData } from '../scripts/backup.mjs';
+
+let app, dir, base;
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'shot-workbench-test-'));
+  app = await createApp({ dataDir: join(dir, 'data') });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  base = `http://127.0.0.1:${app.server.address().port}`;
+});
+afterEach(async () => { await app.close(); await rm(dir, { recursive: true, force: true }); });
+async function call(path, method = 'GET', body) {
+  const res = await fetch(base + path, { method, headers: { 'X-Workbench': '1', 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  return { status: res.status, data: await res.json() };
+}
+async function fixture() {
+  const { data: project } = await call('/api/projects', 'POST', { title: '测试项目' });
+  const { data: shot } = await call(`/api/projects/${project.id}/shots`, 'POST', { title: '转头镜头' });
+  return { project, shot };
+}
+async function upload(shot, content = Buffer.from('test media bytes'), name = 'clip.mp4') {
+  const res = await fetch(`${base}/api/shots/${shot.id}/takes?filename=${encodeURIComponent(name)}`, {
+    method: 'POST', headers: { 'X-Workbench': '1', 'X-Shot-Revision': String(shot.revision) }, body: content
+  });
+  return { status: res.status, data: await res.json() };
+}
+
+test('drafts, immutable take snapshots and active take survive a server restart', async () => {
+  const { project, shot } = await fixture();
+  const update = await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: '角色缓慢转头', notes: '最后停顿一秒', status: 'revise' });
+  assert.equal(update.status, 200);
+  const v1 = await upload(update.data); assert.equal(v1.status, 201);
+  const v2draft = await call(`/api/shots/${shot.id}`, 'PATCH', { revision: v1.data.shot.revision, prompt: '角色缓慢转头，最后停顿一秒' });
+  const v2 = await upload(v2draft.data, Buffer.from('second take')); assert.equal(v2.data.number, 2);
+  const select = await call(`/api/shots/${shot.id}`, 'PATCH', { revision: v2.data.shot.revision, active_take_id: v1.data.id });
+  assert.equal(select.status, 200);
+  await app.close();
+  app = await createApp({ dataDir: join(dir, 'data') });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
+  const saved = (await call(`/api/projects/${project.id}`)).data.shots[0];
+  assert.equal(saved.prompt, '角色缓慢转头，最后停顿一秒');
+  assert.equal(saved.active_take_id, v1.data.id);
+  assert.equal(saved.takes.length, 2);
+  assert.equal(saved.takes[1].prompt, '角色缓慢转头');
+  assert.equal(saved.takes[1].notes, '最后停顿一秒');
+});
+
+test('stale writes and uploads cannot overwrite a newer draft', async () => {
+  const { shot } = await fixture();
+  await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: 'new draft' });
+  assert.equal((await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: 'stale' })).status, 409);
+  assert.equal((await upload(shot)).status, 409);
+  assert.deepEqual(await readdir(join(dir, 'data', 'media')), []);
+  assert.equal(app.store.shot(shot.id).prompt, 'new draft');
+});
+
+test('reordering requires exactly the current project members', async () => {
+  const { project, shot } = await fixture();
+  const second = (await call(`/api/projects/${project.id}/shots`, 'POST', { title: '第二段' })).data;
+  const url = `/api/projects/${project.id}/order`;
+  assert.equal((await call(url, 'PUT', { ids: [second.id, shot.id] })).data.shots[0].id, second.id);
+  assert.equal((await call(url, 'PUT', { ids: [shot.id, shot.id] })).status, 409);
+  assert.equal((await call(url, 'PUT', { ids: [shot.id] })).status, 409);
+});
+
+test('media byte ranges, suffix ranges and HEAD work for video seeking', async () => {
+  const { shot } = await fixture();
+  const content = Buffer.from('0123456789');
+  const take = await upload(shot, content);
+  const mediaId = app.store.detail(shot.project_id).shots[0].takes[0].media_id;
+  const path = `${base}/media/${mediaId}`;
+  const partial = await fetch(path, { headers: { Range: 'bytes=2-5' } });
+  assert.equal(partial.status, 206); assert.equal(partial.headers.get('content-range'), 'bytes 2-5/10'); assert.equal(await partial.text(), '2345');
+  const suffix = await fetch(path, { headers: { Range: 'bytes=-3' } }); assert.equal(await suffix.text(), '789');
+  assert.equal((await fetch(path, { headers: { Range: 'bytes=100-' } })).status, 416);
+  const head = await fetch(path, { method: 'HEAD' }); assert.equal(head.headers.get('content-length'), '10'); assert.equal(await head.text(), '');
+  assert.equal(take.status, 201);
+});
+
+test('backup can be opened with all referenced media after database restore', async () => {
+  const { project, shot } = await fixture();
+  await upload(shot, Buffer.from('original bytes'));
+  const backupDir = join(dir, 'backup');
+  await backupData(join(dir, 'data'), backupDir);
+  const restored = await createApp({ dataDir: backupDir });
+  try {
+    const take = restored.store.detail(project.id).shots[0].takes[0];
+    const media = restored.store.media(take.media_id);
+    assert.equal((await readFile(join(backupDir, 'media', media.stored_name))).toString(), 'original bytes');
+  } finally { restored.store.close(); }
+});
+
+test('local origin checks and field validation reject unintended writes', async () => {
+  const { shot } = await fixture();
+  const foreign = await fetch(base + '/api/projects', { method: 'POST', headers: { Origin: 'https://example.com', 'X-Workbench': '1', 'Content-Type': 'application/json' }, body: '{"title":"bad"}' });
+  assert.equal(foreign.status, 403);
+  const missingHeader = await fetch(base + '/api/projects', { method: 'POST', body: '{}' }); assert.equal(missingHeader.status, 403);
+  assert.equal((await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, status: 'wrong' })).status, 400);
+  assert.equal((await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, title: '' })).status, 400);
+  assert.equal((await upload(shot, Buffer.from('bad'), 'active.html')).status, 415);
+  const html = await fetch(base + '/'); assert.equal(html.status, 200); assert.match(html.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal((await fetch(base + '/src/store.mjs')).status, 404);
+});
+
+test('text-only segments can preserve versions without an AI or media service', async () => {
+  const { shot, project } = await fixture();
+  const draft = (await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: '一个开场', notes: '更简短' })).data;
+  assert.equal((await call(`/api/shots/${shot.id}/snapshot`, 'POST', { revision: draft.revision })).status, 201);
+  const take = (await call(`/api/projects/${project.id}`)).data.shots[0].takes[0];
+  assert.equal(take.media_id, null); assert.equal(take.prompt, '一个开场'); assert.equal(take.notes, '更简短');
+});

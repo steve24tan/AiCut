@@ -1,3 +1,4 @@
+import { setupSegments, bindSegmentCard, renderTimeline, rangeText } from './segments.js';
 const $ = selector => document.querySelector(selector);
 const labels = { todo: '待生成', revise: '待微调', review: '待检查', approved: '已确认' };
 let projects = [], project = null, filter = 'all', busy = false, uploadTarget = null;
@@ -71,7 +72,8 @@ async function copy(text) {
 function requestText(shot) {
   const number = project.shots.indexOf(shot) + 1;
   const take = shot.takes.find(t => t.id === shot.active_take_id);
-  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。`;
+  const range = take?.end_ms != null ? `\n原视频范围：${rangeText(take)}（${take.filename}）` : '';
+  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}${range}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。`;
 }
 async function refreshProjects() { projects = await api('/api/projects'); renderProjects(); }
 function renderProjects() {
@@ -95,6 +97,12 @@ function render() {
   $('#empty').hidden = Boolean(project?.shots.length);
   $('#empty-create').textContent = project ? '添加第一个片段' : '创建第一个项目';
   $('#shots').replaceChildren();
+  renderTimeline(project, id => action(async () => {
+    filter = 'all'; updateFilters(); render();
+    const card = document.querySelector(`[data-id="${id}"]`);
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.querySelector('textarea').focus({ preventScroll: true });
+  }));
   if (!project) return;
   for (const [index, shot] of project.shots.entries()) {
     if (filter !== 'all' && shot.status !== filter) continue;
@@ -116,6 +124,7 @@ function render() {
       });
       card.querySelector('.media-stage').replaceChildren(media);
     } else if (take) card.querySelector('.media-placeholder p').textContent = '文字快照 · v' + take.number;
+    bindSegmentCard(card, shot, take);
     const select = card.querySelector('.take-select');
     if (!shot.takes.length) { select.add(new Option('尚无版本', '')); select.disabled = true; }
     for (const version of shot.takes) select.add(new Option(`v${version.number} · ${version.filename || '文字快照'}`, version.id));
@@ -127,7 +136,7 @@ function render() {
     card.querySelector('.inspect-take').disabled = !take;
     card.querySelector('.inspect-take').addEventListener('click', () => {
       if (!take) return;
-      textDialog(`v${take.number} · 导入时的快照`, `保存时间：${new Date(take.created_at).toLocaleString()}\n素材：${take.filename || '文字快照'}\n\n【Prompt】\n${take.prompt}\n\n【修改要求】\n${take.notes}`, '历史快照只读。切换采用版本不会覆盖正在编辑的草稿。');
+      textDialog(`v${take.number} · 版本快照`, `保存时间：${new Date(take.created_at).toLocaleString()}\n素材：${take.filename || '文字快照'}\n范围：${rangeText(take)}\n\n【Prompt】\n${take.prompt}\n\n【修改要求】\n${take.notes}`, '历史快照只读。切换采用版本不会覆盖正在编辑的草稿。');
     });
     card.querySelector('.copy-request').addEventListener('click', () => copy(requestText(shot)));
     card.querySelector('.snapshot').addEventListener('click', () => action(async () => {
@@ -203,9 +212,10 @@ $('#export').addEventListener('click', () => action(async () => {
   const link = document.createElement('a'); link.href = url; link.download = 'shot-revisions.md'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('已导出文字清单；素材备份请看使用说明');
 }));
-$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 整片拆段／时间轴剪切尚未实现：目前一个素材文件对应一个片段版本。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n只在本机运行，不需要账号、API Key 或联网。`, '逐段 v0.1 · 本地初始架构'));
+$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n只在本机运行，不需要账号、API Key 或联网。`, '逐段 v0.2 · 本地分段工作台'));
 window.addEventListener('beforeunload', event => {
   if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy) { event.preventDefault(); event.returnValue = ''; }
 });
+setupSegments({ action, api, toast, shotById, refresh: async id => { filter = 'all'; updateFilters(); await refreshProjects(); await load(id); } });
 try { await refreshProjects(); if (projects.length) await load(projects[0].id); else { render(); saveState(); } }
 catch (error) { $('#save-state').textContent = '无法连接本地服务'; $('#save-state').classList.add('error'); toast(error.message, true); }

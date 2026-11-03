@@ -1,4 +1,4 @@
-﻿# 初始架构 · v0.1
+# 本地工作台架构 · v0.2
 
 ## 目标与选择
 
@@ -103,6 +103,8 @@ erDiagram
 | PUT | `/api/projects/:id/order` | 提交完整片段 ID 顺序 |
 | PATCH | `/api/shots/:id` | 按 revision 修改草稿、状态或采用版 |
 | POST | `/api/shots/:id/snapshot` | 保存当前文字为只读版本 |
+| POST | `/api/shots/:id/split` | 按当前采用视频范围与 cuts_ms 创建多段，需要 revision |
+| POST | `/api/shots/:id/trim` | 将 start_ms / end_ms 保存为新版本，需要 revision |
 | POST | `/api/shots/:id/takes?filename=...` | 二进制素材导入；`X-Shot-Revision` 指定草稿版本 |
 | GET / HEAD | `/media/:id` | 流式读取／Range 字节读取 |
 
@@ -126,8 +128,18 @@ start.cmd              Windows 启动入口
 
 1. 用真实 5–10 段素材验证修改、回填与重启后的检索。
 2. 增加 Prompt 变更记录及两个版本并排播放；沿用 take，不覆盖历史。
-3. 需要整片拆段时，引入明确的时间范围对象，区分「源素材」与「片段引用」，再接 FFmpeg／PySceneDetect。自动检测结果必须可手动改边界。
+3. 时间范围分段已实现；后续再接 FFmpeg 导出和 PySceneDetect 镜头检测。自动检测结果必须可手动改边界。
 4. 需要文件夹监听时，用 manifest／片段 UUID 归属，不靠易变的显示编号猜测。
 5. 大项目再评估缩略图、转码队列、异步 DB 驱动／Worker。初始版无速度或容量基准承诺。
 
 现有生产工具可通过独立适配器导入；初始版不直接改写外部项目或渲染器。
+
+## v0.2 时间范围与升级
+
+schema v2 为 takes 增加 start_ms、end_ms、duration_ms 三个整数毫秒字段，null 表示原整条文件。分段、调整范围都创建不可变 take，多个 take 共用同一 media。原 take 不变。客户端提交浏览器读取的时长，服务端校验顺序与范围；未独立解码验证真实媒体时长。
+
+分段事务先移动后续卡片位置，将第一段存入原卡片的新 take，再创建其余卡片和范围。失败时整笔回滚。各段继承 Prompt，只有第一段继承备注。调整单段范围不自动修改邻段，可能产生间隙或重叠。
+
+旧 v1 首次升级前用 VACUUM INTO 生成 schema-v1-before-v2.sqlite（已存在则不覆盖），随后在事务中加字段并更新 user_version。更高版本数据库会被拒绝。完整备份仍需素材目录，不要用旧代码打开新版数据。
+
+public/segments.js 负责分段对话框、均分／播放位置边界、范围编辑、单段循环和导航；public/segments.css 提供样式。播放依据 [currentTime](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/currentTime) 定位，结合 [requestVideoFrameCallback](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback) 与 timeupdate 限制预览。它不是帧精确导出。

@@ -103,7 +103,7 @@ try {
     const stream=canvas.captureStream(20), chunks=[];
     const recorder=new MediaRecorder(stream,{mimeType:'video/webm'});
     const done=new Promise(resolve=>{recorder.onstop=resolve}); recorder.ondataavailable=e=>chunks.push(e.data); recorder.start();
-    for(let i=0;i<12;i++){ctx.fillStyle='#26351e';ctx.fillRect(0,0,320,180);ctx.fillStyle='#c6ed9a';ctx.font='18px sans-serif';ctx.fillText('LOCAL PREVIEW / TAKE 02',30,85);ctx.fillRect(30,112,20+i*18,3);await new Promise(resolve=>setTimeout(resolve,50));}
+    for(let i=0;i<60;i++){ctx.fillStyle='#26351e';ctx.fillRect(0,0,320,180);ctx.fillStyle='#c6ed9a';ctx.font='18px sans-serif';ctx.fillText('LOCAL PREVIEW / TAKE 02',30,85);ctx.fillRect(30,112,20+(i%12)*18,3);await new Promise(resolve=>setTimeout(resolve,50));}
     recorder.stop();await done;stream.getTracks().forEach(t=>t.stop());
     document.querySelectorAll('.shot-card')[1].querySelector('.import-take').click();
     const transfer=new DataTransfer();transfer.items.add(new File(chunks,'local-preview.webm',{type:'video/webm'}));
@@ -114,18 +114,60 @@ try {
   await delay(250);
   assert.ok(await evaluate(`document.querySelectorAll('.shot-card')[1].querySelector('video').currentTime>0`));
   assert.equal(app.store.detail(dbProject.id).shots[1].takes.length, 2);
+  await evaluate(`document.querySelectorAll('.shot-card')[1].querySelector('.split-video').click()`);
+  await until(`document.querySelector('#segment-dialog').open && !document.querySelector('#apply-segments').disabled && !document.body.hasAttribute('aria-busy')`);
+  assert.equal(await evaluate(`document.querySelectorAll('.cut-row').length`), 4);
+  const firstCut = await evaluate(`Number(document.querySelector('.cut-row input').value)`);
+  // Add and remove a playhead cut, then customize the first boundary.
+  await evaluate(`document.querySelector('#segment-video').currentTime=${firstCut / 2}`);
+  await delay(150);
+  await evaluate(`document.querySelector('#cut-here').click()`);
+  assert.equal(await evaluate(`document.querySelectorAll('.cut-row').length`), 5);
+  await evaluate(`document.querySelector('.cut-row button:last-child').click()`);
+  await evaluate(`(() => { const input=document.querySelector('.cut-row input');input.value=(${firstCut}-0.05).toFixed(3);input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await mkdir(join(root, 'test-results'), { recursive: true });
+  const splitScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  await writeFile(join(root, 'test-results', 'segmentation-dialog.png'), Buffer.from(splitScreenshot.data, 'base64'));
+  await evaluate(`document.querySelector('#apply-segments').click()`);
+  await until(`document.querySelectorAll('.shot-card').length===7 && !document.querySelector('#segment-dialog').open && !document.body.hasAttribute('aria-busy')`);
+  let segmented = app.store.detail(dbProject.id);
+  assert.equal(segmented.shots[1].takes[0].end_ms, Math.round((firstCut - 0.05) * 1000));
+  assert.equal(new Set(segmented.shots.slice(1,6).map(shot=>shot.takes[0].media_id)).size,1);
+  await evaluate(`(() => { const input=document.querySelectorAll('.shot-card')[2].querySelector('[data-field=notes]');input.value='只改这一小段';input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await until(`document.querySelector('#save-state').textContent.includes('所有修改已保存')`);
+  assert.equal(app.store.detail(dbProject.id).shots[1].notes, samples[1].notes);
+  const secondRange = segmented.shots[2].takes[0];
+  await evaluate(`(() => { const video=document.querySelectorAll('.shot-card')[2].querySelector('video');video.muted=true;return video.play(); })()`);
+  await delay((secondRange.end_ms - secondRange.start_ms) * 1.7);
+  const playing = await evaluate(`(() => { const v=document.querySelectorAll('.shot-card')[2].querySelector('video');return {time:v.currentTime,paused:v.paused}; })()`);
+  assert.ok(playing.time >= secondRange.start_ms / 1000 - 0.01 && playing.time < secondRange.end_ms / 1000 + 0.05);
+  assert.equal(playing.paused, false);
+  await evaluate(`(() => { const card=document.querySelectorAll('.shot-card')[2];card.querySelector('.loop-segment').checked=false;card.querySelector('video').currentTime=${secondRange.end_ms / 1000 - 0.07}; })()`);
+  await delay(300);
+  assert.equal(await evaluate(`document.querySelectorAll('.shot-card')[2].querySelector('video').paused`), true);
+  await evaluate(`document.querySelectorAll('.shot-card')[2].querySelector('.copy-request').click()`);
+  await until(`document.querySelector('#text-dialog').open`);
+  assert.match(await evaluate(`document.querySelector('#text-content').value`), /原视频范围/);
+  await evaluate(`document.querySelector('#text-dialog [data-close]').click();document.querySelectorAll('.shot-card')[2].querySelector('.trim-range').click()`);
+  await until(`document.querySelector('#segment-dialog').open && !document.querySelector('#apply-segments').disabled && !document.body.hasAttribute('aria-busy')`);
+  await evaluate(`document.querySelector('#trim-start').value=${(secondRange.start_ms + 20) / 1000};document.querySelector('#trim-start').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#apply-segments').click()`);
+  await until(`!document.querySelector('#segment-dialog').open && !document.body.hasAttribute('aria-busy')`);
+  segmented = app.store.detail(dbProject.id);
+  assert.equal(segmented.shots[2].takes.length, 2);
+  assert.equal(segmented.shots[2].takes[0].start_ms, secondRange.start_ms + 20);
   // Reload through the UI and verify data retrieval independently of page memory.
   await command('Page.reload');
   await delay(600);
-  await until(`document.querySelectorAll('.shot-card').length===3 && document.querySelectorAll('.shot-card')[1].querySelector('video')?.readyState>=1`);
+  await until(`document.querySelectorAll('.shot-card').length===7 && document.querySelectorAll('.shot-card')[1].querySelector('video')?.readyState>=1`);
   assert.equal(await evaluate(`document.querySelectorAll('.shot-card')[1].querySelector('[data-field=notes]').value`), samples[1].notes);
   await mkdir(join(root, 'test-results'), { recursive: true });
+  await evaluate(`window.scrollTo(0,0)`);
   const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   await writeFile(join(root, 'test-results', 'browser-smoke.png'), Buffer.from(screenshot.data, 'base64'));
   assert.deepEqual(browserErrors, []);
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile page should not overflow');
-  console.log('PASS: browser project/shot creation, autosave, PNG import, snapshot, copy fallback, WebM import/playback, reload, mobile width; no runtime exceptions.');
+  console.log('PASS: browser creation/autosave/import, five-way split, playhead cut, custom boundary, independent notes, bounded loop/pause, range prompt, trim history, reload, mobile width; no runtime exceptions.');
   console.log(`Screenshot: ${join(root, 'test-results', 'browser-smoke.png')}`);
 } finally {
   if (socket) socket.close();

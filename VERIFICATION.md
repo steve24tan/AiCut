@@ -33,7 +33,13 @@ Browser automation requires an environment that allows Chrome child processes an
 
 - Real user media, long videos, codec variations, 1 GB imports, disk-full conditions and power-loss recovery are not benchmarked.
 - No claim that MOV or every MP4 codec can play in every browser.
-- No automatic scene splitting, timeline cutting, side-by-side comparison or folder watcher is implemented.
+- No automatic scene detection, encoded clip cutting, side-by-side comparison or folder watcher is implemented.
 - No hosted site, model API or subscription automation exists.
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
-- Cross-platform GitHub Actions checks are configured for Node 24 on Windows and Linux. Their remote results have not yet been verified.
+- The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
+
+## v0.2 segmentation checks — 2026-11-03
+
+Eleven integration tests passed. Added checks cover a 30-second source split into five adjacent ranges using one media file; preserved original take; later-shot ordering; independent notes; recursive splitting; atomic invalid-cut rejection; image and stale-write rejection; trimmed-range backup restore; and a legacy v1 database migration with a pre-upgrade snapshot and intact drafts/media.
+
+The isolated Chrome test also passed: imported a real synthetic WebM, opened the segmentation dialog, created five ranges, added/removed a playhead cut, edited a boundary, saved seven total cards, edited a segment's notes independently, looped a segment and paused at its end with looping disabled, copied its time-range context, saved a trimmed take and reloaded the page. No runtime exceptions or mobile horizontal overflow. Screenshots were inspected. Preview boundary timing is approximate, not frame-accurate export.

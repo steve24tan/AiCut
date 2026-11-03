@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server.mjs';
 import { backupData } from '../scripts/backup.mjs';
+import { DatabaseSync } from 'node:sqlite';
 
 let app, dir, base;
 beforeEach(async () => {
@@ -113,4 +114,74 @@ test('text-only segments can preserve versions without an AI or media service', 
   assert.equal((await call(`/api/shots/${shot.id}/snapshot`, 'POST', { revision: draft.revision })).status, 201);
   const take = (await call(`/api/projects/${project.id}`)).data.shots[0].takes[0];
   assert.equal(take.media_id, null); assert.equal(take.prompt, '一个开场'); assert.equal(take.notes, '更简短');
+});
+
+test('30 seconds split into five independent shots shares one media file and preserves original take', async () => {
+  const { project, shot } = await fixture();
+  const following = (await call(`/api/projects/${project.id}/shots`, 'POST', { title: 'Following shot' })).data;
+  const saved = (await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: 'source prompt', notes: 'source notes' })).data;
+  const uploaded = (await upload(saved)).data;
+  const result = await call(`/api/shots/${shot.id}/split`, 'POST', { revision: uploaded.shot.revision, duration_ms: 30000, cuts_ms: [6000, 12000, 18000, 24000] });
+  assert.equal(result.status, 201);
+  assert.equal(result.data.shots.length, 6);
+  assert.equal(result.data.shots[5].id, following.id);
+  const segments = result.data.shots.slice(0, 5);
+  assert.deepEqual(segments.map(s => [s.takes[0].start_ms, s.takes[0].end_ms]), [[0, 6000], [6000, 12000], [12000, 18000], [18000, 24000], [24000, 30000]]);
+  assert.equal(new Set(segments.map(s => s.takes[0].media_id)).size, 1);
+  assert.equal((await readdir(join(dir, 'data', 'media'))).length, 1);
+  assert.equal(segments[0].takes[1].id, uploaded.id);
+  assert.equal(segments[0].takes[1].start_ms, null);
+  assert.equal(segments[1].prompt, 'source prompt');
+  const edited = await call(`/api/shots/${segments[1].id}`, 'PATCH', { revision: segments[1].revision, notes: 'only second segment' });
+  assert.equal(edited.status, 200);
+  assert.equal(app.store.shot(shot.id).notes, 'source notes');
+  const reSplit = await call(`/api/shots/${segments[1].id}/split`, 'POST', { revision: edited.data.revision, cuts_ms: [9000] });
+  assert.equal(reSplit.status, 201);
+  assert.deepEqual(reSplit.data.shots.slice(1, 3).map(s => [s.takes[0].start_ms, s.takes[0].end_ms]), [[6000, 9000], [9000, 12000]]);
+});
+
+test('invalid cuts, stale writes and image sources fail atomically', async () => {
+  const { project, shot } = await fixture();
+  const uploaded = (await upload(shot)).data;
+  const url = `/api/shots/${shot.id}/split`;
+  for (const cuts_ms of [[], [0], [30001], [10000, 5000], [6000, 6000], [50], ['6000'], Array(100).fill(1000)]) {
+    assert.equal((await call(url, 'POST', { revision: uploaded.shot.revision, duration_ms: 30000, cuts_ms })).status, 400);
+  }
+  assert.equal((await call(url, 'POST', { revision: 0, duration_ms: 30000, cuts_ms: [15000] })).status, 409);
+  assert.equal(app.store.detail(project.id).shots.length, 1);
+  assert.equal(app.store.detail(project.id).shots[0].takes.length, 1);
+  const image = (await upload(uploaded.shot, Buffer.from('image'), 'test.png')).data;
+  assert.equal((await call(url, 'POST', { revision: image.shot.revision, duration_ms: 30000, cuts_ms: [15000] })).status, 400);
+});
+
+test('trim history and ranges survive backup restore without duplicating media', async () => {
+  const { project, shot } = await fixture();
+  const uploaded = (await upload(shot)).data;
+  const result = await call(`/api/shots/${shot.id}/trim`, 'POST', { revision: uploaded.shot.revision, duration_ms: 30000, start_ms: 5000, end_ms: 12500 });
+  assert.equal(result.status, 201);
+  assert.equal(result.data.shots[0].takes[1].start_ms, null);
+  const backupDir = join(dir, 'ranged-backup'); await backupData(join(dir, 'data'), backupDir);
+  const restored = await createApp({ dataDir: backupDir });
+  try {
+    const take = restored.store.detail(project.id).shots[0].takes[0];
+    assert.deepEqual([take.start_ms, take.end_ms, take.duration_ms], [5000, 12500, 30000]);
+  } finally { restored.store.close(); }
+});
+
+test('v1 database migrates without losing existing media or drafts and creates a pre-upgrade snapshot', async () => {
+  const { project, shot } = await fixture();
+  const updated = (await call(`/api/shots/${shot.id}`, 'PATCH', { revision: 0, prompt: 'legacy draft' })).data;
+  await upload(updated);
+  await app.close();
+  const old = new DatabaseSync(join(dir, 'data', 'workbench.sqlite'));
+  old.exec('ALTER TABLE takes DROP COLUMN start_ms; ALTER TABLE takes DROP COLUMN end_ms; ALTER TABLE takes DROP COLUMN duration_ms; PRAGMA user_version=1;'); old.close();
+  app = await createApp({ dataDir: join(dir, 'data') });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
+  const detail = (await call(`/api/projects/${project.id}`)).data;
+  assert.equal(detail.shots[0].prompt, 'legacy draft');
+  assert.equal(detail.shots[0].takes[0].start_ms, null);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 2);
+  const snapshot = new DatabaseSync(join(dir, 'data', 'schema-v1-before-v2.sqlite'), { readOnly: true });
+  try { assert.equal(snapshot.prepare('PRAGMA user_version').get().user_version, 1); assert.equal(snapshot.prepare('SELECT prompt FROM shots').get().prompt, 'legacy draft'); }
+  finally { snapshot.close(); }
 });

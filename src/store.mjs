@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 export class AppError extends Error {
@@ -21,6 +21,12 @@ function title(value) {
 export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
+  const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
+  if (schemaVersion > 2) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 1) {
+    const backupPath = join(dataDir, 'schema-v1-before-v2.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL
@@ -42,8 +48,15 @@ export function openStore(dataDir) {
     );
     CREATE INDEX IF NOT EXISTS shots_project ON shots(project_id,position);
     CREATE INDEX IF NOT EXISTS takes_shot ON takes(shot_id,number);
-    PRAGMA user_version=1;
   `);
+  if (schemaVersion < 2) {
+    db.exec(`BEGIN IMMEDIATE;
+      ALTER TABLE takes ADD COLUMN start_ms INTEGER;
+      ALTER TABLE takes ADD COLUMN end_ms INTEGER;
+      ALTER TABLE takes ADD COLUMN duration_ms INTEGER;
+      PRAGMA user_version=2;
+      COMMIT;`);
+  }
   function transaction(fn) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); db.exec('COMMIT'); return result; }
@@ -106,9 +119,61 @@ export function openStore(dataDir) {
       const takeId = randomUUID();
       if (media) db.prepare('INSERT INTO media VALUES(?,?,?,?,?,?)')
         .run(media.id, media.filename, media.stored_name, media.mime, media.bytes, media.sha256);
-      db.prepare('INSERT INTO takes VALUES(?,?,?,?,?,?,?)').run(takeId, id, number, row.prompt, row.notes, media?.id ?? null, now());
+      db.prepare('INSERT INTO takes(id,shot_id,number,prompt,notes,media_id,created_at) VALUES(?,?,?,?,?,?,?)').run(takeId, id, number, row.prompt, row.notes, media?.id ?? null, now());
       db.prepare("UPDATE shots SET active_take_id=?,revision=revision+1,updated_at=?,status='review' WHERE id=?").run(takeId, now(), id);
       return { id: takeId, number, shot: shot(id) };
+    });
+  }
+  function rangeSource(id, revision) {
+    const row = shot(id); expected(row, revision);
+    const source = db.prepare(`SELECT t.*,m.mime FROM takes t JOIN media m ON m.id=t.media_id
+      WHERE t.id=? AND t.shot_id=?`).get(row.active_take_id, id);
+    if (!source || !source.mime.startsWith('video/')) throw new AppError(400, '请先选择一个视频版本');
+    return { row, source };
+  }
+  function validateRange(start, end, duration) {
+    if (![start, end, duration].every(Number.isSafeInteger) || start < 0 || end > duration || end - start < 100 || duration > 86400000) {
+      throw new AppError(400, '时间范围无效：每段至少 0.1 秒，且不能超出视频时长（上限 24 小时）');
+    }
+  }
+  function rangeTake(row, source, start, end, duration) {
+    const takeId = randomUUID();
+    const number = db.prepare('SELECT COALESCE(MAX(number),0)+1 AS next FROM takes WHERE shot_id=?').get(row.id).next;
+    db.prepare(`INSERT INTO takes(id,shot_id,number,prompt,notes,media_id,created_at,start_ms,end_ms,duration_ms)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(takeId, row.id, number, row.prompt, row.notes, source.media_id, now(), start, end, duration);
+    db.prepare("UPDATE shots SET active_take_id=?,revision=revision+1,updated_at=?,status='review' WHERE id=?").run(takeId, now(), row.id);
+  }
+  function trim(id, payload) {
+    return transaction(() => {
+      const { row, source } = rangeSource(id, payload.revision);
+      const duration = source.duration_ms ?? payload.duration_ms;
+      validateRange(payload.start_ms, payload.end_ms, duration);
+      rangeTake(row, source, payload.start_ms, payload.end_ms, duration);
+      return detail(row.project_id);
+    });
+  }
+  function split(id, payload) {
+    return transaction(() => {
+      const { row, source } = rangeSource(id, payload.revision);
+      const duration = source.duration_ms ?? payload.duration_ms;
+      const start = source.start_ms ?? 0, end = source.end_ms ?? duration;
+      const cuts = payload.cuts_ms;
+      if (!Array.isArray(cuts) || cuts.length < 1 || cuts.length > 99) throw new AppError(400, '请选择 2–100 段');
+      const boundaries = [start, ...cuts, end];
+      for (let n = 1; n < boundaries.length; n++) validateRange(boundaries[n - 1], boundaries[n], duration);
+      db.prepare('UPDATE shots SET position=position+? WHERE project_id=? AND position>?').run(cuts.length, row.project_id, row.position);
+      const name = row.title.slice(0, 190);
+      for (let n = 0; n < boundaries.length - 1; n++) {
+        let target = row;
+        if (n > 0) {
+          const newId = randomUUID();
+          db.prepare(`INSERT INTO shots(id,project_id,title,position,prompt,notes,updated_at) VALUES(?,?,?,?,?,?,?)`)
+            .run(newId, row.project_id, `${name} · ${String(n + 1).padStart(2, '0')}`, row.position + n, row.prompt, '', now());
+          target = shot(newId);
+        }
+        rangeTake(target, source, boundaries[n], boundaries[n + 1], duration);
+      }
+      return detail(row.project_id);
     });
   }
   function reorder(projectId, ids) {
@@ -123,7 +188,7 @@ export function openStore(dataDir) {
     return detail(projectId);
   }
   return {
-    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder,
+    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim,
     listProjects: () => db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM shots s WHERE s.project_id=p.id) AS shot_count
       FROM projects p ORDER BY created_at,id`).all(),
     media: id => db.prepare('SELECT * FROM media WHERE id=?').get(id),

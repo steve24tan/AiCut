@@ -81,6 +81,9 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       }
       if ((m = /^\/api\/projects\/([\w-]+)\/order$/.exec(path)) && req.method === 'PUT') return json(res, 200, store.reorder(m[1], (await body(req)).ids));
       if ((m = /^\/api\/shots\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res, 200, store.updateShot(m[1], await body(req)));
+      if ((m = /^\/api\/shots\/([\w-]+)\/(split|trim)$/.exec(path)) && req.method === 'POST') {
+        return json(res, 201, store[m[2]](m[1], await body(req)));
+      }
       if ((m = /^\/api\/shots\/([\w-]+)\/snapshot$/.exec(path)) && req.method === 'POST') {
         return json(res, 201, store.addTake(m[1], (await body(req)).revision));
       }
@@ -115,7 +118,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         if (!media) throw new AppError(404, '素材不存在');
         return await sendFile(req, res, join(mediaDir, media.stored_name), media.mime, true);
       }
-      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
+      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'] };
       if (files[path] && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, join(root, 'public', files[path][0]), files[path][1]);
       throw new AppError(404, '找不到这个地址');
     } catch (error) {

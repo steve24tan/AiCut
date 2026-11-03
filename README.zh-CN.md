@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-本地运行的分段素材与修改工作台，版本 `0.3.0`。
+本地运行的分段素材与修改工作台，版本 `0.4.0`。
 
 每个片段保存 Prompt 草稿、修改要求、状态和带历史文字快照的素材版本。可以复制请求到外部工具，也可选择本机已登录的 Claude Code／Codex CLI 推送文字修改任务。核心工作台可离线使用；CLI 作业会发送本段文字并消耗对应订阅额度，不接模型 API Key。
 
@@ -96,6 +96,15 @@ npm.cmd start
 ## 验证
 
 ### 本地 CLI 对接
+
+现有 Claude Code／Codex 会话现在也能自己导入本地文件并分段，不用你点上传。服务运行后，CLI 可调用：
+
+```sh
+node cli.mjs projects
+node cli.mjs import PROJECT_ID "path/to/source.mp4" --segments 5 --duration 30
+```
+
+示例表示一条已知 30 秒视频分 5 段。未知时长时，安装 ffprobe 并省略 --duration，由它读取；没有 ffprobe 又不知道时长时会明确失败，不猜分段。也支持自定时间点与再次细分，详见 CLI_BRIDGE.md。导入仅复制到本机；网页空闲时自动显示新片段，不丢弃未保存编辑。
 
 先安装并用订阅账号登录 Claude Code 或 Codex CLI，再重启服务。每段底部选 CLI → **推送任务** → 等待完成 → **查看任务 / 结果** → **采用结果**。
 

@@ -12,6 +12,35 @@ The CLI receives project/shot titles, prompt, notes, source revision and adopted
 
 ## Existing agent session
 
+### Import and split without the file picker
+
+Run these commands with the server running:
+
+```sh
+node cli.mjs projects create "My project"
+node cli.mjs projects
+node cli.mjs import PROJECT_ID "path/to/source.mp4" --segments 5 --duration 30
+```
+
+Use the project ID returned by create/list. The example splits a known 30-second source into five ranges. Use `--title NAME` to name the imported card. Without split options, import simply creates one shot and take. Supported files match the browser's import formats.
+
+Omit `--duration` to read duration through optional ffprobe. It must be installed on PATH, or specified by `SHOT_FFPROBE_BIN`. No ffprobe and no known duration means the command fails before uploading. A supplied duration is trusted metadata; confirm it is correct. Original file bytes remain unchanged. No ffprobe installation was performed automatically.
+
+Custom and recursive ranges:
+
+```sh
+node cli.mjs split SHOT_ID --cuts 5,12,18,25 --duration 30
+node cli.mjs split RANGED_SHOT_ID --segments 2
+```
+
+Cuts are absolute seconds in the original source and must be increasing inside the current range. Ranged takes retain source duration; an unranged existing take can be probed through its local media URL or use --duration.
+
+CLI input/range validation happens before import. Upload and split are separate server operations: a network failure may leave an empty shot, or an imported unsplit shot. Errors report that shot ID; inspect it and retry split instead of repeating import blindly. No automatic deletion or retry occurs.
+
+The open page detects shot changes when idle. Unsaved edits or an open dialog delay refresh. Metadata reads are lightweight; a full reload is used only when a changed shot set is detected.
+
+### Read and complete a manual text task
+
 Select **外部 CLI 领取** on the card and push. While the server runs, ask your existing agent to run these commands from this repository:
 
 ```sh

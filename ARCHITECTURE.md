@@ -1,6 +1,8 @@
-# 本地工作台架构 · v0.3
+# 本地工作台架构 · v0.4
 
 ## 目标与选择
+
+v0.4 的 src/import-command.mjs 为现有本地 Agent 会话提供流式文件导入、均分与自定义时间点；未知时长通过可选 ffprobe 读取或明确提供 --duration，不猜测。导入与分段为独立服务请求，部分失败保留可检查的片段 ID。GET /api/shots/:id 提供现有版本详情；GET /api/projects/:id/stamp 返回轻量片段元数据。网页仅在空闲且无未保存编辑／弹窗时接收外部变更，再通过正常保存流程刷新，避免覆盖当前输入。
 
 v0.3 增加了本地任务队列。schema v3 的 jobs 保存片段／项目 ID、provider、status、source_revision、不可变 snapshot、result、error 和时间戳。v2 升级前生成 schema-v2-before-v3.sqlite；片段级唯一索引阻止重复 queued/running 任务。
 

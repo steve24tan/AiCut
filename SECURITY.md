@@ -8,7 +8,7 @@ Mutating requests require a local application header. Host and Origin checks rej
 
 Use the repository's private vulnerability reporting feature if the maintainer has enabled it. Otherwise, open a minimal issue asking for a private reporting channel. Do not publish exploit details, credentials or private media in a public issue.
 
-Only the current `0.3.x` line is maintained at this stage. A full security audit has not been performed.
+Only the current `0.4.x` line is maintained at this stage. A full security audit has not been performed.
 
 ## Optional CLI execution
 

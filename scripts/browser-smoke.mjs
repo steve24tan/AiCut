@@ -1,6 +1,7 @@
 // Optional local QA: uses the installed Chrome and Node's built-in CDP WebSocket.
 // No browser download, extension or production data is needed.
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -179,10 +180,16 @@ try {
   await evaluate(`document.querySelectorAll('.shot-card')[2].scrollIntoView({block:'center'})`);
   const cliScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   await writeFile(join(root, 'test-results', 'cli-jobs.png'), Buffer.from(cliScreenshot.data, 'base64'));
+  // Import from an actual external CLI subprocess while a user draft is pending.
+  await evaluate(`(() => { const input=document.querySelector('.shot-card [data-field=notes]');input.value='Keep my edit while CLI imports';input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await promisify(execFile)(process.execPath, ['cli.mjs', 'import', dbProject.id, pngPath, '--title', 'CLI imported reference'], { cwd: root, env: { ...process.env, SHOT_WORKBENCH_URL: url } });
+  await until(`document.querySelectorAll('.shot-card').length===8 && !document.body.hasAttribute('aria-busy')`);
+  assert.equal(await evaluate(`document.querySelector('.shot-card [data-field=notes]').value`), 'Keep my edit while CLI imports');
+  assert.equal(app.store.detail(dbProject.id).shots.length, 8);
   assert.deepEqual(browserErrors, []);
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile page should not overflow');
-  console.log('PASS: browser creation/autosave/import, five-way split, boundaries, notes, loop/pause, trim, synthetic CLI push/result/adopt preserving media, reload, mobile width; no model requests or runtime exceptions.');
+  console.log('PASS: browser segmentation, synthetic CLI push/result/adopt, actual external CLI import/live refresh preserving edits, reload/mobile; no model requests or runtime exceptions.');
   console.log(`Screenshot: ${join(root, 'test-results', 'browser-smoke.png')}`);
 } finally {
   if (socket) socket.close();

@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Shot Workbench is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.3.0` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.4.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -93,7 +93,7 @@ On macOS/Linux, the equivalent start command is `SHOT_DATA_DIR=./restored-data n
 npm test
 ```
 
-Twenty-one integration checks cover persistence, snapshots, stale writes, segmentation, backup/restore, migration, task queues, cancellation, subscription-auth checks and both CLI protocols with synthetic subprocesses. Tests never call a model.
+Twenty-five integration checks cover persistence, snapshots, segmentation, backup/restore, migration, task queues, CLI protocols, streaming import and missing-duration rejection. Tests never call a model.
 
 An optional Chrome browser smoke test is available with `node scripts/browser-smoke.mjs`. It uses temporary data, imports synthetic PNG/WebM fixtures and writes a screenshot to `test-results/`. It defaults to the standard Windows Chrome path; set `CHROME_PATH` for another installation. This optional test is separate from CI.
 
@@ -109,6 +109,21 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
 
 ## Local CLI tasks
+
+### Let your local agent import and split
+
+An existing Claude Code/Codex session can use the command bridge directly; no manual file picker is required. With the server running:
+
+```sh
+node cli.mjs projects
+node cli.mjs import PROJECT_ID "path/to/source.mp4" --segments 5 --duration 30
+```
+
+For an unknown duration, omit `--duration` and install ffprobe on PATH (or set `SHOT_FFPROBE_BIN` to its executable). Without ffprobe, a known duration is required for a full-video split; the command never guesses it. Ranged takes already retain their source duration for recursive splitting. Import copies only to the local server, not to an AI provider. The open browser refreshes idle shot changes automatically without discarding pending edits.
+
+See [CLI bridge](CLI_BRIDGE.md) for creating projects, custom cuts and partial-failure recovery.
+
+### Push a shot's text revision
 
 Install and sign in to Claude Code and/or Codex CLI with your subscription account. Restart this server to see the CLI on PATH. Choose the CLI under a card and click **推送任务**. A task captures its prompt, notes, adopted-take metadata and time range. Tasks run one at a time. **查看任务 / 结果** previews the returned text; **采用结果** updates the prompt while preserving its old text snapshot and media.
 

@@ -97,6 +97,13 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         return json(res, 200, command === 'claim' ? jobs.start(id) : jobs.complete(id, payload));
       }
       if ((m = /^\/api\/projects\/([\w-]+)$/.exec(path)) && req.method === 'GET') return json(res, 200, store.detail(m[1]));
+      if ((m = /^\/api\/projects\/([\w-]+)\/stamp$/.exec(path)) && req.method === 'GET') {
+        store.project(m[1]);
+        return json(res, 200, store.db.prepare('SELECT id,title,position,revision,active_take_id FROM shots WHERE project_id=? ORDER BY position,id').all(m[1]));
+      }
+      if ((m = /^\/api\/shots\/([\w-]+)$/.exec(path)) && req.method === 'GET') {
+        const shot = store.shot(m[1]); return json(res, 200, store.detail(shot.project_id).shots.find(row => row.id === shot.id));
+      }
       if ((m = /^\/api\/projects\/([\w-]+)\/shots$/.exec(path)) && req.method === 'POST') {
         return json(res, 201, store.addShot(m[1], (await body(req)).title));
       }

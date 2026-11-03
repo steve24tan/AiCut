@@ -39,6 +39,7 @@ export function setupSegments(handlers) {
   });
   for (const id of ['trim-start', 'trim-end']) $('#' + id).addEventListener('input', renderCuts);
   $('#segment-dialog').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); selection = null; });
+  document.addEventListener('workbench-idle', () => { if (selection) updateSummary(); });
   $('#apply-segments').addEventListener('click', () => context.action(async () => {
     if (!valid()) throw new Error('请检查时间边界，每段至少 0.1 秒');
     const shot = context.shotById(selection.shotId);

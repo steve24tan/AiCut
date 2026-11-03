@@ -222,5 +222,21 @@ window.addEventListener('beforeunload', event => {
 });
 setupSegments({ action, api, toast, shotById, refresh: async id => { filter = 'all'; updateFilters(); await refreshProjects(); await load(id); } });
 await setupJobs({ api, action, toast, textDialog, getProject: () => project, reload: load });
+setInterval(async () => {
+  const dirty = () => [...edits.values()].some(edit => edit.saved < edit.seq || edit.running);
+  if (busy || dirty() || document.hidden || document.querySelector('dialog[open]')) return;
+  const id = project?.id;
+  try {
+    if (!id) {
+      const items = await api('/api/projects');
+      if (!project && !busy && !document.querySelector('dialog[open]') && items.length) await action(async () => { projects = items; await load(items[0].id); });
+      return;
+    }
+    const stamp = await api(`/api/projects/${id}/stamp`);
+    if (project?.id !== id || busy || dirty() || document.querySelector('dialog[open]')) return;
+    const current = project.shots.map(({ id, title, position, revision, active_take_id }) => ({ id, title, position, revision, active_take_id }));
+    if (JSON.stringify(stamp) !== JSON.stringify(current)) await action(async () => { await refreshProjects(); await load(id); });
+  } catch { /* A stopped server must not discard local unsaved edits. */ }
+}, 1500);
 try { await refreshProjects(); if (projects.length) await load(projects[0].id); else { render(); saveState(); } }
 catch (error) { $('#save-state').textContent = '无法连接本地服务'; $('#save-state').classList.add('error'); toast(error.message, true); }

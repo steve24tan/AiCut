@@ -1,8 +1,16 @@
-# 本地工作台架构 · v0.2
+# 本地工作台架构 · v0.3
 
 ## 目标与选择
 
-本地单用户的「项目 → 片段 → 草稿／修改要求 → 素材版本」工作流。用户在已有订阅工具里生成内容，再手动导回。本工具不自动提交 Prompt，不连接模型服务，不发布网站。
+v0.3 增加了本地任务队列。schema v3 的 jobs 保存片段／项目 ID、provider、status、source_revision、不可变 snapshot、result、error 和时间戳。v2 升级前生成 schema-v2-before-v3.sqlite；片段级唯一索引阻止重复 queued/running 任务。
+
+src/jobs.mjs 管理领取、完成、取消和采用；src/runner.mjs 串行启动 CLI，输入走 stdin，shell=false，限制超时和输出，并支持取消。Claude 禁用工具／MCP；Codex read-only；不绕过权限。API 不接受任意命令路径。
+
+采用须匹配 source_revision，事务保存旧文字 take，再更新 Prompt／状态，不改备注及素材。SQLite 备份包含任务快照／结果；原始日志为辅助文件，不在标准备份中。服务重启不自动重新派工。
+
+public/jobs.js 提供每段推送、状态轮询、历史预览及采用；cli.mjs 为现有会话提供 JSON 命令桥。自动派工是新进程；已有会话显式领取。接口与范围见 [CLI_BRIDGE.md](CLI_BRIDGE.md)。新增路由 GET /api/cli、GET /api/jobs、POST /api/shots/:id/jobs、GET /api/jobs/:id、POST /api/jobs/:id/claim、complete、cancel、apply；仅 manual 任务允许外部领取／完成。
+
+本地单用户的「项目 → 片段 → 草稿／修改要求 → 素材版本」工作流。用户在订阅工具里生成素材并手动导回。核心工作台离线运行；可选 CLI 作业通过本机已登录的 Claude Code／Codex 处理文字修改请求，不直接连接模型 API 或生成视频。
 
 参考来源（2026-11-03 文档核对，未安装这些上游项目）：
 

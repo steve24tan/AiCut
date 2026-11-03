@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Shot Workbench is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-No AI API, account, cloud upload or npm dependencies. The current interface is in Simplified Chinese. This is an early `v0.2.0` implementation, with synthetic integration and browser checks; real production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.3.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -20,6 +20,7 @@ No AI API, account, cloud upload or npm dependencies. The current interface is i
 - Active-take selection without overwriting the next draft.
 - Text-only snapshots, status filters and Markdown export.
 - SQLite and original media backed up together.
+- Per-shot local CLI dispatch, result preview and explicit adoption.
 
 ## Run locally
 
@@ -59,7 +60,7 @@ The first upgrade from schema v1 saves a pre-upgrade database snapshot in the da
 
 ## Data and backups
 
-The server listens on `127.0.0.1` only. Files are copied from your browser to your local application folder. There are no third-party scripts, fonts or runtime services.
+The server listens on `127.0.0.1` only. Media is copied from your browser to your local folder. There are no third-party web scripts or fonts. Optional CLI tasks contact the CLI provider for inference; the core workspace works offline.
 
 ```text
 data/
@@ -92,11 +93,13 @@ On macOS/Linux, the equivalent start command is `SHOT_DATA_DIR=./restored-data n
 npm test
 ```
 
-Eleven integration checks cover restart persistence, immutable snapshots, stale-write rejection, ordering, media ranges, backup restore, local request boundaries, five-way splitting, recursive splitting, range validation and schema migration.
+Twenty-one integration checks cover persistence, snapshots, stale writes, segmentation, backup/restore, migration, task queues, cancellation, subscription-auth checks and both CLI protocols with synthetic subprocesses. Tests never call a model.
 
 An optional Chrome browser smoke test is available with `node scripts/browser-smoke.mjs`. It uses temporary data, imports synthetic PNG/WebM fixtures and writes a screenshot to `test-results/`. It defaults to the standard Windows Chrome path; set `CHROME_PATH` for another installation. This optional test is separate from CI.
 
 See [architecture](ARCHITECTURE.md), [verification](VERIFICATION.md), [contributing](CONTRIBUTING.md) and [security scope](SECURITY.md).
+
+CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_VERIFICATION.md).
 
 ## Current limits
 
@@ -104,6 +107,18 @@ See [architecture](ARCHITECTURE.md), [verification](VERIFICATION.md), [contribut
 - Maximum file size is 1 GB. Large files, disk-full conditions and production workloads are not benchmarked.
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
+
+## Local CLI tasks
+
+Install and sign in to Claude Code and/or Codex CLI with your subscription account. Restart this server to see the CLI on PATH. Choose the CLI under a card and click **推送任务**. A task captures its prompt, notes, adopted-take metadata and time range. Tasks run one at a time. **查看任务 / 结果** previews the returned text; **采用结果** updates the prompt while preserving its old text snapshot and media.
+
+If the shot changes after dispatch, adoption is blocked; copy the result to merge manually. Failed/interrupted tasks do not retry automatically. Restarting the service interrupts unfinished native tasks rather than spending quota again.
+
+Native adapters check subscription-style login and reject API-key login, remove common API-key environment overrides and do not use permission-bypass flags. The CLI still uses its provider's network and subscription quota. Actual model inference is not exercised in development tests; local installation and login types were verified separately.
+
+For an existing agent session, choose **外部 CLI 领取** and use the command bridge to read/claim/complete queued tasks. Native dispatch starts a new process, not an already-open chat. Current work is text-prompt revision, not editing video bytes. See [CLI bridge](CLI_BRIDGE.md).
+
+![Per-shot dispatch and adoption. Synthetic executor, no model request.](docs/images/cli-jobs.png)
 
 ## Acknowledgments and license
 

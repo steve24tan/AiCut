@@ -1,4 +1,5 @@
 import { setupSegments, bindSegmentCard, renderTimeline, rangeText } from './segments.js';
+import { setupJobs, bindJobCard, refreshJobs } from './jobs.js';
 const $ = selector => document.querySelector(selector);
 const labels = { todo: '待生成', revise: '待微调', review: '待检查', approved: '已确认' };
 let projects = [], project = null, filter = 'all', busy = false, uploadTarget = null;
@@ -59,6 +60,7 @@ async function action(fn) {
   finally {
     controls.filter(el => el.isConnected).forEach(el => { el.disabled = false; });
     busy = false; document.body.removeAttribute('aria-busy');
+    document.dispatchEvent(new Event('workbench-idle'));
   }
 }
 function textDialog(title, content, description = '') {
@@ -88,6 +90,7 @@ function renderProjects() {
 async function load(id) {
   const next = await api(`/api/projects/${id}`);
   project = next; edits.clear(); renderProjects(); render(); saveState();
+  await refreshJobs();
 }
 function render() {
   $('#project-title').textContent = project?.title || '你的下一段，从这里开始。';
@@ -150,6 +153,7 @@ function render() {
       const ids = project.shots.map(s => s.id); [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]];
       await api(`/api/projects/${project.id}/order`, { method: 'PUT', body: JSON.stringify({ ids }) }); await load(project.id);
     }));
+    bindJobCard(card, shot);
     $('#shots').append(card);
   }
   if (!$('#shots').childElementCount && project.shots.length) {
@@ -217,5 +221,6 @@ window.addEventListener('beforeunload', event => {
   if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy) { event.preventDefault(); event.returnValue = ''; }
 });
 setupSegments({ action, api, toast, shotById, refresh: async id => { filter = 'all'; updateFilters(); await refreshProjects(); await load(id); } });
+await setupJobs({ api, action, toast, textDialog, getProject: () => project, reload: load });
 try { await refreshProjects(); if (projects.length) await load(projects[0].id); else { render(); saveState(); } }
 catch (error) { $('#save-state').textContent = '无法连接本地服务'; $('#save-state').classList.add('error'); toast(error.message, true); }

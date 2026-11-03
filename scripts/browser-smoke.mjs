@@ -10,7 +10,7 @@ import { createApp } from '../server.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const scratch = await mkdtemp(join(tmpdir(), 'shot-browser-'));
-const app = await createApp({ dataDir: join(scratch, 'data') });
+const app = await createApp({ dataDir: join(scratch, 'data'), executor: async job => ({ revised_prompt: job.snapshot.shot.prompt + ' · CLI revised', summary: 'Synthetic task executor; no model request.' }) });
 let chrome, socket;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 try {
@@ -55,7 +55,8 @@ try {
   };
   async function until(expression) {
     for (let n = 0; n < 100; n++) { if (await evaluate(expression)) return; await delay(100); }
-    throw new Error(`Browser condition timed out: ${expression}`);
+    const diagnostics = await evaluate(`JSON.stringify({toast:document.querySelector('#toast')?.textContent,save:document.querySelector('#save-state')?.textContent,summary:document.querySelector('#segment-summary')?.textContent,applyDisabled:document.querySelector('#apply-segments')?.disabled})`);
+    throw new Error(`Browser condition timed out: ${expression}; ${diagnostics}`);
   }
   await command('Runtime.enable'); await command('Page.enable');
   await command('Emulation.setDeviceMetricsOverride', { width: 1512, height: 1100, deviceScaleFactor: 1, mobile: false });
@@ -155,6 +156,17 @@ try {
   segmented = app.store.detail(dbProject.id);
   assert.equal(segmented.shots[2].takes.length, 2);
   assert.equal(segmented.shots[2].takes[0].start_ms, secondRange.start_ms + 20);
+  // Exercise native-dispatch UI with an injected synthetic executor; never call a model.
+  const beforeCli = app.store.detail(dbProject.id).shots[2];
+  await evaluate(`document.querySelectorAll('.shot-card')[2].querySelector('.job-provider').value='claude';document.querySelectorAll('.shot-card')[2].querySelector('.push-job').click()`);
+  await until(`document.querySelectorAll('.shot-card')[2].querySelector('.job-state').textContent.includes('待采用') && !document.body.hasAttribute('aria-busy')`);
+  assert.equal(app.store.shot(beforeCli.id).prompt, beforeCli.prompt);
+  await evaluate(`document.querySelectorAll('.shot-card')[2].querySelector('.job-actions button').click()`);
+  await until(`document.querySelector('#text-dialog').open`);
+  assert.match(await evaluate(`document.querySelector('#text-content').value`), /CLI revised/);
+  await evaluate(`document.querySelector('#text-dialog [data-close]').click();[...document.querySelectorAll('.shot-card')[2].querySelectorAll('.job-actions button')].find(b=>b.textContent==='采用结果').click()`);
+  await until(`document.querySelectorAll('.shot-card')[2].querySelector('[data-field=prompt]').value.endsWith('CLI revised') && !document.body.hasAttribute('aria-busy')`);
+  assert.equal(app.store.shot(beforeCli.id).active_take_id, beforeCli.active_take_id);
   // Reload through the UI and verify data retrieval independently of page memory.
   await command('Page.reload');
   await delay(600);
@@ -164,10 +176,13 @@ try {
   await evaluate(`window.scrollTo(0,0)`);
   const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   await writeFile(join(root, 'test-results', 'browser-smoke.png'), Buffer.from(screenshot.data, 'base64'));
+  await evaluate(`document.querySelectorAll('.shot-card')[2].scrollIntoView({block:'center'})`);
+  const cliScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  await writeFile(join(root, 'test-results', 'cli-jobs.png'), Buffer.from(cliScreenshot.data, 'base64'));
   assert.deepEqual(browserErrors, []);
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile page should not overflow');
-  console.log('PASS: browser creation/autosave/import, five-way split, playhead cut, custom boundary, independent notes, bounded loop/pause, range prompt, trim history, reload, mobile width; no runtime exceptions.');
+  console.log('PASS: browser creation/autosave/import, five-way split, boundaries, notes, loop/pause, trim, synthetic CLI push/result/adopt preserving media, reload, mobile width; no model requests or runtime exceptions.');
   console.log(`Screenshot: ${join(root, 'test-results', 'browser-smoke.png')}`);
 } finally {
   if (socket) socket.close();

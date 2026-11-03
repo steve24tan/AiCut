@@ -22,7 +22,11 @@ export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
   const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion > 2) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion > 3) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 2) {
+    const backupPath = join(dataDir, 'schema-v2-before-v3.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   if (schemaVersion === 1) {
     const backupPath = join(dataDir, 'schema-v1-before-v2.sqlite');
     if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
@@ -56,6 +60,18 @@ export function openStore(dataDir) {
       ALTER TABLE takes ADD COLUMN duration_ms INTEGER;
       PRAGMA user_version=2;
       COMMIT;`);
+  }
+  if (schemaVersion < 3) {
+    db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY, shot_id TEXT NOT NULL REFERENCES shots(id),
+        project_id TEXT NOT NULL REFERENCES projects(id), provider TEXT NOT NULL,
+        status TEXT NOT NULL, source_revision INTEGER NOT NULL, snapshot TEXT NOT NULL,
+        result TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS jobs_project ON jobs(project_id,created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS one_active_job_per_shot ON jobs(shot_id) WHERE status IN ('queued','running');
+      PRAGMA user_version=3; COMMIT;`);
   }
   function transaction(fn) {
     db.exec('BEGIN IMMEDIATE');

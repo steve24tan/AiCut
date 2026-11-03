@@ -179,7 +179,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     app.store.close(); process.exitCode = 1;
   });
   app.server.listen(port, '127.0.0.1', () => {
-    console.log(`Shot Workbench: http://127.0.0.1:${app.server.address().port}`);
+    console.log(`AiCut: http://127.0.0.1:${app.server.address().port}`);
     console.log(`Local data: ${app.dataDir}`);
     console.log('Press Ctrl+C to stop.');
   });

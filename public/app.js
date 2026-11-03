@@ -218,7 +218,7 @@ $('#export').addEventListener('click', () => action(async () => {
   const link = document.createElement('a'); link.href = url; link.download = 'shot-revisions.md'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('已导出文字清单；素材备份请看使用说明');
 }));
-$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n只在本机运行，不需要账号、API Key 或联网。`, '逐段 v0.2 · 本地分段工作台'));
+$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n核心管理可离线使用；可选 CLI 作业使用其订阅账号与网络连接。`, 'AiCut v0.5.1 · 本地分段创作工作台'));
 window.addEventListener('beforeunload', event => {
   if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy) { event.preventDefault(); event.returnValue = ''; }
 });

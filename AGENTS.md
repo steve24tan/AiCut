@@ -1,4 +1,4 @@
-# Working with Shot Workbench
+# Working with AiCut
 
 This is a local Node.js 24+ application. Follow the parent/global policy applicable to your workspace. Read CLI_BRIDGE.md before controlling the workspace from an agent.
 

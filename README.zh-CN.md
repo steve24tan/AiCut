@@ -1,8 +1,8 @@
-# 逐段 · Shot Workbench
+# AiCut · 本地分段创作工作台
 
 [English](README.md) | 简体中文
 
-本地运行的分段素材与修改工作台，版本 `0.5.0`。
+本地运行的分段素材与修改工作台，版本 `0.5.1`。
 
 每个片段保存 Prompt 草稿、修改要求、状态和带历史文字快照的素材版本。可以复制请求到外部工具，也可选择本机已登录的 Claude Code／Codex CLI 推送文字修改任务。核心工作台可离线使用；CLI 作业会发送本段文字并消耗对应订阅额度，不接模型 API Key。
 
@@ -53,7 +53,7 @@ npm.cmd start
 ## 数据与备份
 
 ```text
-ShotWorkbench/
+AiCut/
   data/
     workbench.sqlite       项目、片段、草稿、历史快照、素材索引
     workbench.sqlite-wal   SQLite 运行时文件，可能存在

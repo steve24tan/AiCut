@@ -1,12 +1,12 @@
-# Shot Workbench · 逐段
+# AiCut
 
 **Keep every shot, prompt and revision together — on your own computer.**
 
 English | [简体中文](README.zh-CN.md)
 
-Shot Workbench is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
+AiCut is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.5.0` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.5.1` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -39,7 +39,7 @@ On Windows, you can also double-click `start.cmd`. In PowerShell, use `npm.cmd s
 1. Create a project (新建项目) and add a shot (添加片段).
 2. Fill in **Prompt** and **修改要求** (revision request).
 3. Click **复制本段修改请求** to copy the context into the tool you already use.
-4. Generate or edit content outside Shot Workbench.
+4. Generate or edit content outside AiCut.
 5. Click **导入新版** to attach the result as a new take. The previous take remains available.
 
 You can also import several files to create one shot per file.

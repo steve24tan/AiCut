@@ -1,6 +1,6 @@
 # Contributing
 
-Shot Workbench is an early local-first application. Small fixes, usability improvements, accessibility and documentation contributions are welcome.
+AiCut is an early local-first application. Small fixes, usability improvements, accessibility and documentation contributions are welcome.
 
 ## Get started
 

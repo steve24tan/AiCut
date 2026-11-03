@@ -1,12 +1,24 @@
 {
-  "name": "shot-workbench",
-  "version": "0.5.0",
+  "name": "aicut",
+  "version": "0.5.1",
   "private": true,
   "license": "MIT",
-  "keywords": ["storyboard", "local-first", "video", "prompt-management", "revision"],
+  "keywords": [
+    "aicut",
+    "video-workflow",
+    "storyboard",
+    "local-first",
+    "prompt-management",
+    "claude-code",
+    "codex-cli",
+    "sound-effects",
+    "meme-library"
+  ],
   "type": "module",
-  "description": "Local shot, prompt, revision and media workbench",
-  "engines": { "node": ">=24.0.0" },
+  "description": "Local workspace for video segments, prompt revisions, Claude Code/Codex CLI tasks, and sound & meme references.",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test tests/*.test.mjs",

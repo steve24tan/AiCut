@@ -22,7 +22,11 @@ export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
   const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion > 3) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion > 4) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 3) {
+    const backupPath = join(dataDir, 'schema-v3-before-v4.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   if (schemaVersion === 2) {
     const backupPath = join(dataDir, 'schema-v2-before-v3.sqlite');
     if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
@@ -73,6 +77,26 @@ export function openStore(dataDir) {
       CREATE UNIQUE INDEX IF NOT EXISTS one_active_job_per_shot ON jobs(shot_id) WHERE status IN ('queued','running');
       PRAGMA user_version=3; COMMIT;`);
   }
+  if (schemaVersion < 4) {
+    db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS library_assets (
+        id TEXT PRIMARY KEY,media_id TEXT NOT NULL REFERENCES media(id),title TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',favorite INTEGER NOT NULL DEFAULT 0,
+        source_url TEXT NOT NULL DEFAULT '',author TEXT NOT NULL DEFAULT '',license TEXT NOT NULL DEFAULT '',
+        revision INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shot_refs (
+        id TEXT PRIMARY KEY,shot_id TEXT NOT NULL REFERENCES shots(id),asset_id TEXT NOT NULL REFERENCES library_assets(id),
+        offset_ms INTEGER NOT NULL DEFAULT 0,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS shot_refs_shot ON shot_refs(shot_id);
+      PRAGMA user_version=4; COMMIT;`);
+  }
+  function references(shotId) {
+    return db.prepare(`SELECT r.*,a.title,a.tags,a.source_url,a.author,a.license,m.filename,m.mime,m.id AS media_id
+      FROM shot_refs r JOIN library_assets a ON a.id=r.asset_id JOIN media m ON m.id=a.media_id WHERE r.shot_id=? ORDER BY r.offset_ms,r.created_at,r.id`)
+      .all(shotId).map(row => ({ ...row, tags: JSON.parse(row.tags) }));
+  }
   function transaction(fn) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); db.exec('COMMIT'); return result; }
@@ -96,6 +120,7 @@ export function openStore(dataDir) {
     const result = project(id);
     result.shots = db.prepare('SELECT * FROM shots WHERE project_id=? ORDER BY position,id').all(id).map(row => ({
       ...row,
+      references: references(row.id),
       takes: db.prepare(`SELECT t.*, m.filename, m.mime, m.bytes FROM takes t
         LEFT JOIN media m ON m.id=t.media_id WHERE t.shot_id=? ORDER BY t.number DESC`).all(row.id)
     }));
@@ -179,6 +204,7 @@ export function openStore(dataDir) {
       for (let n = 1; n < boundaries.length; n++) validateRange(boundaries[n - 1], boundaries[n], duration);
       db.prepare('UPDATE shots SET position=position+? WHERE project_id=? AND position>?').run(cuts.length, row.project_id, row.position);
       const name = row.title.slice(0, 190);
+      const refs = references(row.id), targets = [];
       for (let n = 0; n < boundaries.length - 1; n++) {
         let target = row;
         if (n > 0) {
@@ -188,6 +214,12 @@ export function openStore(dataDir) {
           target = shot(newId);
         }
         rangeTake(target, source, boundaries[n], boundaries[n + 1], duration);
+        targets.push({ id: target.id, start: boundaries[n], end: boundaries[n + 1] });
+      }
+      for (const ref of refs) {
+        const absolute = start + ref.offset_ms;
+        const target = targets.find(segment => absolute >= segment.start && absolute < segment.end);
+        if (target) db.prepare('UPDATE shot_refs SET shot_id=?,offset_ms=? WHERE id=?').run(target.id, absolute - target.start, ref.id);
       }
       return detail(row.project_id);
     });
@@ -204,7 +236,7 @@ export function openStore(dataDir) {
     return detail(projectId);
   }
   return {
-    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim,
+    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references,
     listProjects: () => db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM shots s WHERE s.project_id=p.id) AS shot_count
       FROM projects p ORDER BY created_at,id`).all(),
     media: id => db.prepare('SELECT * FROM media WHERE id=?').get(id),

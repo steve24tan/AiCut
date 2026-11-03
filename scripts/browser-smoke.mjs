@@ -49,8 +49,8 @@ try {
     waiting.set(id, { resolve: result => { clearTimeout(timeout); resolve(result); }, reject: error => { clearTimeout(timeout); reject(error); } });
     socket.send(JSON.stringify({ id, method, params }));
   });
-  const evaluate = async expression => {
-    const result = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  const evaluate = async (expression, userGesture = false) => {
+    const result = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
     if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
     return result.result.value;
   };
@@ -186,10 +186,49 @@ try {
   await until(`document.querySelectorAll('.shot-card').length===8 && !document.body.hasAttribute('aria-busy')`);
   assert.equal(await evaluate(`document.querySelector('.shot-card [data-field=notes]').value`), 'Keep my edit while CLI imports');
   assert.equal(app.store.detail(dbProject.id).shots.length, 8);
+  // Optional library: real local audio audition, metadata, drag reference and task context.
+  const samplesCount=4000, wav=Buffer.alloc(44+samplesCount*2);
+  wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samplesCount*2,40);
+  for(let i=0;i<samplesCount;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/8000)*2000),44+i*2);
+  const wavPath=join(scratch,'awkward-pause.wav');await writeFile(wavPath,wav);
+  await evaluate(`document.querySelector('#toggle-library').click()`);
+  await until(`!document.querySelector('#library-panel').hidden`);
+  const libraryDOM=await command('DOM.getDocument');
+  const libraryInput=await command('DOM.querySelector',{nodeId:libraryDOM.root.nodeId,selector:'#library-files'});
+  await command('DOM.setFileInputFiles',{nodeId:libraryInput.nodeId,files:[wavPath,pngPath]});
+  await until(`document.querySelectorAll('.library-asset').length===2 && !document.body.hasAttribute('aria-busy')`);
+  await evaluate(`(() => {const audio=document.querySelector('.library-asset audio');audio.muted=true;return audio.play();})()`,true);
+  await delay(100);assert.ok(await evaluate(`document.querySelector('.library-asset audio').currentTime>0`));
+  await evaluate(`document.querySelector('.library-asset audio').pause();[...document.querySelectorAll('.library-asset')].find(el=>el.querySelector('audio')).querySelectorAll('button')[1].click()`);
+  await until(`document.querySelector('#asset-dialog').open`);
+  await evaluate(`document.querySelector('#asset-title').value='尴尬停顿';document.querySelector('#asset-tags').value='尴尬, 喜剧';document.querySelector('#asset-author').value='Synthetic fixture';document.querySelector('#asset-license').value='Synthetic QA only';document.querySelector('#asset-form').requestSubmit()`);
+  await until(`!document.querySelector('#asset-dialog').open && !document.body.hasAttribute('aria-busy')`);
+  await evaluate(`document.querySelector('#library-search').value='尴尬';document.querySelector('#library-search').dispatchEvent(new Event('input',{bubbles:true}))`);
+  assert.equal(await evaluate(`document.querySelectorAll('.library-asset').length`),1);
+  await evaluate(`document.querySelector('.library-asset button').click()`);
+  await until(`document.querySelector('.library-asset button').textContent==='★' && !document.body.hasAttribute('aria-busy')`);
+  await evaluate(`(() => {const data=new DataTransfer();const asset=document.querySelector('.library-asset');asset.dispatchEvent(new DragEvent('dragstart',{dataTransfer:data,bubbles:true}));document.querySelectorAll('.shot-card')[1].dispatchEvent(new DragEvent('drop',{dataTransfer:data,bubbles:true,cancelable:true}));})()`);
+  await until(`document.querySelector('#reference-dialog').open`);
+  await evaluate(`document.querySelector('#reference-offset').value='0.1';document.querySelector('#reference-note').value='要这种突然尴尬的停顿感';document.querySelector('#reference-form').requestSubmit()`);
+  await until(`document.querySelectorAll('.shot-card')[1].querySelector('.shot-reference') && !document.body.hasAttribute('aria-busy')`);
+  const referenced=app.store.detail(dbProject.id).shots[1];assert.equal(referenced.references[0].offset_ms,100);assert.equal(referenced.references[0].note,'要这种突然尴尬的停顿感');
+  await evaluate(`document.querySelectorAll('.shot-card')[1].querySelector('.job-provider').value='manual';document.querySelectorAll('.shot-card')[1].querySelector('.push-job').click()`);
+  await until(`document.querySelectorAll('.shot-card')[1].querySelector('.job-state').textContent.includes('排队中') && !document.body.hasAttribute('aria-busy')`);
+  const referenceJob=app.jobs.list(dbProject.id).find(job=>job.shot_id===referenced.id);
+  assert.equal(app.jobs.get(referenceJob.id).snapshot.references[0].title,'尴尬停顿');
+  await evaluate(`Object.defineProperty(navigator,'clipboard',{value:{writeText:async()=>{throw new Error('QA copy fallback')}}});document.querySelectorAll('.shot-card')[1].querySelector('.copy-request').click()`);
+  await until(`document.querySelector('#text-dialog').open`);assert.match(await evaluate(`document.querySelector('#text-content').value`),/要这种突然尴尬的停顿感/);
+  await evaluate(`document.querySelector('#text-dialog [data-close]').click();document.querySelectorAll('.shot-card')[1].querySelector('.shot-references').scrollIntoView({block:'center'})`);
+  const libraryScreenshot=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(join(root,'test-results','asset-library.png'),Buffer.from(libraryScreenshot.data,'base64'));
+  await evaluate(`document.querySelector('#close-library').click()`);
+  assert.equal(app.store.references(referenced.id).length,1);
+  await command('Page.reload');await delay(600);
+  await until(`document.querySelectorAll('.shot-card').length===8 && document.querySelectorAll('.shot-reference').length===1`);
+  assert.equal(await evaluate(`document.querySelector('#library-panel').hidden`),true);
   assert.deepEqual(browserErrors, []);
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile page should not overflow');
-  console.log('PASS: browser segmentation, synthetic CLI push/result/adopt, actual external CLI import/live refresh preserving edits, reload/mobile; no model requests or runtime exceptions.');
+  console.log('PASS: browser library toggle/import, WAV audition, tags/search/favorite, drag/drop reference, task/copy context, disable preservation; plus segmentation/CLI/import/mobile. No model requests.');
   console.log(`Screenshot: ${join(root, 'test-results', 'browser-smoke.png')}`);
 } finally {
   if (socket) socket.close();

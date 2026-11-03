@@ -8,7 +8,9 @@ Mutating requests require a local application header. Host and Origin checks rej
 
 Use the repository's private vulnerability reporting feature if the maintainer has enabled it. Otherwise, open a minimal issue asking for a private reporting channel. Do not publish exploit details, credentials or private media in a public issue.
 
-Only the current `0.4.x` line is maintained at this stage. A full security audit has not been performed.
+Only the current `0.5.x` line is maintained at this stage. A full security audit has not been performed.
+
+The optional asset library is a built-in module, not an untrusted plugin loader. It accepts allowlisted media formats and records provenance supplied by the user. Browser previews do not execute imported scripts. Association deletion preserves original assets. Media is not attached to CLI models; descriptive reference metadata is included in explicit tasks. No third-party meme or audio pack is bundled.
 
 ## Optional CLI execution
 

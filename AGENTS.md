@@ -15,4 +15,6 @@ This is a local Node.js 24+ application. Follow the parent/global policy applica
 
 ## Development
 
+The optional asset-library module associates references without replacing active video. See extensions/asset-library/README.md. Preserve originals, provenance, revision guards and reference relocation during splitting. CLI snapshots include metadata, not media bytes; do not claim automatic audio understanding or a rendered mix.
+
 Run `npm test` after behavioral changes. Runtime data, task files, credentials and private media must not be committed. Do not invoke a real model to test the bridge without user authorization; synthetic fixtures are provided. Preserve revision conflicts, immutable takes and the backup contract.

@@ -9,9 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { openStore, AppError } from './src/store.mjs';
 import { openJobs } from './src/jobs.mjs';
 import { createRunner } from './src/runner.mjs';
+import { openLibrary, libraryManifest } from './src/library.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+const libraryTypes = { ...types, '.gif': 'image/gif', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.flac': 'audio/flac' };
 const MAX_UPLOAD = 1024 ** 3;
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
@@ -65,6 +67,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
   await mkdir(mediaDir, { recursive: true });
   const store = openStore(dataDir);
   const jobs = openJobs(store);
+  const library = openLibrary(store);
   const runner = createRunner(jobs, dataDir, { executor });
   const server = http.createServer(async (req, res) => {
     for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
@@ -76,11 +79,17 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-workbench'] !== '1') throw new AppError(403, '缺少本地请求标识');
       const url = new URL(req.url, `http://127.0.0.1:${port}`);
       const path = url.pathname;
+      if (path === '/api/extensions' && req.method === 'GET') return json(res,200,[libraryManifest]);
+      if (path === '/api/library/assets' && req.method === 'GET') return json(res,200,library.list());
       if (path === '/api/cli' && req.method === 'GET') return json(res, 200, runner.providers());
       if (path === '/api/jobs' && req.method === 'GET') return json(res, 200, jobs.list(url.searchParams.get('project')));
       if (path === '/api/projects' && req.method === 'GET') return json(res, 200, store.listProjects());
       if (path === '/api/projects' && req.method === 'POST') return json(res, 201, store.createProject((await body(req)).title));
       let m;
+      if ((m = /^\/api\/library\/assets\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res,200,library.update(m[1],await body(req)));
+      if ((m = /^\/api\/shots\/([\w-]+)\/references$/.exec(path)) && req.method === 'POST') return json(res,201,library.attach(m[1],await body(req)));
+      if ((m = /^\/api\/shots\/([\w-]+)\/references\/([\w-]+)$/.exec(path)) && req.method === 'DELETE') return json(res,200,library.detach(m[1],m[2],(await body(req)).revision));
+      if ((m = /^\/api\/shots\/([\w-]+)\/references\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res,200,library.editReference(m[1],m[2],await body(req)));
       if ((m = /^\/api\/shots\/([\w-]+)\/jobs$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req);
         if (payload.provider !== 'manual' && !runner.providers().find(item => item.id === payload.provider)?.available) throw new AppError(400, '未找到本机 CLI，请安装并登录后重启服务，或选择外部 CLI');
@@ -115,12 +124,14 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       if ((m = /^\/api\/shots\/([\w-]+)\/snapshot$/.exec(path)) && req.method === 'POST') {
         return json(res, 201, store.addTake(m[1], (await body(req)).revision));
       }
-      if ((m = /^\/api\/shots\/([\w-]+)\/takes$/.exec(path)) && req.method === 'POST') {
-        const shotId = m[1]; const row = store.shot(shotId);
-        const revision = Number(req.headers['x-shot-revision']); store.expected(row, revision);
+      if (((m = /^\/api\/shots\/([\w-]+)\/takes$/.exec(path)) || path === '/api/library/import') && req.method === 'POST') {
+        const isLibrary = path === '/api/library/import';
+        const shotId = isLibrary ? null : m[1];
+        const revision = Number(req.headers['x-shot-revision']);
+        if (!isLibrary) store.expected(store.shot(shotId), revision);
         const filename = basename((url.searchParams.get('filename') || '').replaceAll('\\', '/'));
-        const ext = extname(filename).toLowerCase(); const mime = types[ext];
-        if (!mime || filename.length > 255) throw new AppError(415, '支持 MP4、WebM、MOV、PNG、JPG、WebP');
+        const ext = extname(filename).toLowerCase(); const mime = (isLibrary ? libraryTypes : types)[ext];
+        if (!mime || filename.length > 255) throw new AppError(415, isLibrary ? '素材库支持常见音频、GIF、图片与视频格式' : '支持 MP4、WebM、MOV、PNG、JPG、WebP');
         const length = Number(req.headers['content-length']);
         if (length > MAX_UPLOAD) throw new AppError(413, '单个素材上限 1 GB');
         const id = randomUUID(); const storedName = id + ext;
@@ -135,7 +146,8 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
           await pipeline(req, meter, createWriteStream(temp, { flags: 'wx' }));
           if (!bytes) throw new AppError(400, '素材文件不能为空');
           await rename(temp, target);
-          const result = store.addTake(shotId, revision, { id, filename, stored_name: storedName, mime, bytes, sha256: hash.digest('hex') });
+          const media = { id, filename, stored_name: storedName, mime, bytes, sha256: hash.digest('hex') };
+          const result = isLibrary ? library.add(media) : store.addTake(shotId, revision, media);
           return json(res, 201, result);
         } catch (error) {
           await rm(temp, { force: true }); await rm(target, { force: true }); throw error;
@@ -146,7 +158,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         if (!media) throw new AppError(404, '素材不存在');
         return await sendFile(req, res, join(mediaDir, media.stored_name), media.mime, true);
       }
-      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'] };
+      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'] };
       if (files[path] && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, join(root, 'public', files[path][0]), files[path][1]);
       throw new AppError(404, '找不到这个地址');
     } catch (error) {
@@ -156,7 +168,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
     }
   });
   server.requestTimeout = 30 * 60 * 1000;
-  return { server, store, jobs, runner, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
+  return { server, store, jobs, runner, library, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

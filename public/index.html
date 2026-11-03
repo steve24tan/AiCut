@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/segments.css">
   <link rel="stylesheet" href="/jobs.css">
+  <link rel="stylesheet" href="/library.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -18,7 +19,7 @@
     <div class="sidebar-bottom"><span class="local-dot"></span> 本机工作空间<div>素材与记录保存在这台电脑</div><button id="help" class="text-button">使用与备份说明 ↗</button></div>
   </aside>
   <main>
-    <header class="topbar"><span>工作空间 <span class="slash">/</span> 分镜工作台</span><span id="save-state" role="status">正在连接本地服务…</span></header>
+    <header class="topbar"><span>工作空间 <span class="slash">/</span> 分镜工作台</span><button id="toggle-library" aria-pressed="false">▦ 素材库扩展</button><span id="save-state" role="status">正在连接本地服务…</span></header>
     <section class="workspace">
       <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
       <div class="board-bar"><div class="filters" role="group" aria-label="按状态筛选"><button data-filter="all" class="selected">全部片段 <span id="total">0</span></button><button data-filter="revise">待微调</button><button data-filter="approved">已确认</button></div><span class="board-hint">编号随顺序更新 · 用箭头调整顺序</span></div>
@@ -31,6 +32,35 @@
   <dialog id="name-dialog"><form id="name-form"><div class="dialog-head"><h2 id="name-heading">新建项目</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div><label for="name-input">名称</label><input id="name-input" maxlength="200" required autocomplete="off"><div class="dialog-actions"><button type="button" data-close>取消</button><button class="primary" type="submit">创建</button></div></form></dialog>
   <dialog id="text-dialog"><div class="dialog-head"><h2 id="text-heading"></h2><button data-close class="icon" aria-label="关闭">×</button></div><p id="text-description"></p><textarea id="text-content" readonly rows="16"></textarea><div class="dialog-actions"><button data-close>关闭</button></div></dialog>
   <input id="file-input" type="file" accept=".mp4,.webm,.mov,.png,.jpg,.jpeg,.webp" multiple hidden>
+  <aside id="library-panel" hidden aria-label="素材库扩展">
+    <div class="dialog-head"><div><div class="eyebrow">LOCAL EXTENSION</div><h2>素材库</h2></div><button id="close-library" class="icon" aria-label="关闭素材库">×</button></div>
+    <p class="library-intro">用看得见、听得到的参考，表达你想要的感觉。</p>
+    <button id="library-import" class="primary">＋ 导入音效 / 图片 / 短视频</button>
+    <input id="library-files" type="file" accept=".mp3,.wav,.ogg,.m4a,.flac,.gif,.png,.jpg,.jpeg,.webp,.mp4,.webm,.mov" multiple hidden>
+    <input id="library-search" type="search" placeholder="搜索名称、标签，例如：尴尬、冲击" aria-label="搜索素材">
+    <label class="favorite-filter"><input id="library-favorites" type="checkbox"> 只看收藏</label>
+    <p id="library-target">先点一段，或直接拖到目标片段</p>
+    <div id="library-assets"></div>
+    <p class="library-footnote">可直接拖入本地文件。关闭扩展不删除素材或关联。本版仅试听与参考关联，不做混音导出。</p>
+  </aside>
+  <dialog id="asset-dialog"><form id="asset-form">
+    <div class="dialog-head"><h2>素材信息</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div>
+    <div id="asset-preview" class="asset-preview"></div>
+    <label>名称<input id="asset-title" maxlength="200" required></label>
+    <label>标签（逗号分隔）<input id="asset-tags" placeholder="尴尬, 喜剧, 反转"></label>
+    <label>来源链接<input id="asset-source" type="url" maxlength="2000"></label>
+    <label>作者<input id="asset-author" maxlength="500"></label>
+    <label>授权记录<input id="asset-license" maxlength="500" placeholder="填写素材的实际授权信息"></label>
+    <div class="dialog-actions"><button type="button" data-close>关闭</button><button type="submit" class="primary">保存信息</button></div>
+  </form></dialog>
+  <dialog id="reference-dialog"><form id="reference-form">
+    <div class="dialog-head"><h2 id="reference-heading">给这一段添加感觉参考</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div>
+    <div id="reference-preview" class="asset-preview"></div>
+    <label>出现在本段第几秒<input id="reference-offset" type="number" min="0" max="86400" step="0.001" value="0" required></label>
+    <label>想借用什么感觉？<textarea id="reference-note" rows="3" maxlength="5000" placeholder="例如：要这种突然尴尬的停顿；这个只作为情绪参考。"></textarea></label>
+    <p class="library-footnote">保存参考名称、位置和说明；CLI 会读取这些信息。本版不向模型附加素材文件，也不合成进视频。</p>
+    <div class="dialog-actions"><button type="button" data-close>取消</button><button type="submit" class="primary">保存参考</button></div>
+  </form></dialog>
   <dialog id="segment-dialog">
     <div class="dialog-head"><h2 id="segment-heading">视频分段</h2><button data-close class="icon" aria-label="关闭">×</button></div>
     <p id="segment-description"></p>

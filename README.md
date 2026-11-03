@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Shot Workbench is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.4.0` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.5.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -93,7 +93,7 @@ On macOS/Linux, the equivalent start command is `SHOT_DATA_DIR=./restored-data n
 npm test
 ```
 
-Twenty-five integration checks cover persistence, snapshots, segmentation, backup/restore, migration, task queues, CLI protocols, streaming import and missing-duration rejection. Tests never call a model.
+Thirty integration checks cover persistence, segmentation, backup and migration, task queues, CLI protocols, imports and library/reference integrity. Tests never call a model.
 
 An optional Chrome browser smoke test is available with `node scripts/browser-smoke.mjs`. It uses temporary data, imports synthetic PNG/WebM fixtures and writes a screenshot to `test-results/`. It defaults to the standard Windows Chrome path; set `CHROME_PATH` for another installation. This optional test is separate from CI.
 
@@ -107,6 +107,16 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Maximum file size is 1 GB. Large files, disk-full conditions and production workloads are not benchmarked.
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
+
+## Optional Asset Library extension
+
+Toggle **素材库扩展** to import local sounds, images/GIFs or short videos into a reusable library. Preview, search tags, favorite and drag onto a shot to specify a local time and the feeling you want. Originals can be downloaded for your finishing editor. The active video stays unchanged.
+
+Copied requests and CLI snapshots include reference metadata and your notes; media files are not attached to models. This version provides independent audition/reference links, not synchronized mixing, overlays or composite export. It bundles no third-party media. Closing the extension preserves assets and links.
+
+![Optional library and per-shot references. Synthetic fixtures only.](docs/images/asset-library.png)
+
+See [Asset Library documentation](extensions/asset-library/README.md) for API and split/reorder behavior.
 
 ## Local CLI tasks
 

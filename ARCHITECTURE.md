@@ -1,6 +1,10 @@
-# 本地工作台架构 · v0.4
+# 本地工作台架构 · v0.5
 
 ## 目标与选择
+
+v0.5 提供可选内置 asset-library 扩展：src/library.mjs 管理素材与关联，public/library.js / library.css 提供开关、导入、搜索、试听和拖放；GET /api/extensions 返回能力声明，不加载外部代码。schema v4 增加 library_assets（media 外键、描述、标签、收藏、来源与 revision）及 shot_refs（shot/asset 外键、段内 offset_ms、使用说明）。v3 升级前生成数据库快照。
+
+素材原件共用 data/media 不可变存储，备份沿用 SQLite＋media。关联不替换采用视频；解除关联不删除原件。分段事务会将范围内关联迁移到对应新片段并换算局部时间，重排不移动参考位置；超出新范围的关联保留并提示调整。修改描述／关联会增加相关片段 revision，阻止旧 CLI 结果覆盖；收藏不改变任务上下文。复制请求／任务快照包含参考元数据，不向模型附加媒体文件。不做同步混音或叠加导出。
 
 v0.4 的 src/import-command.mjs 为现有本地 Agent 会话提供流式文件导入、均分与自定义时间点；未知时长通过可选 ffprobe 读取或明确提供 --duration，不猜测。导入与分段为独立服务请求，部分失败保留可检查的片段 ID。GET /api/shots/:id 提供现有版本详情；GET /api/projects/:id/stamp 返回轻量片段元数据。网页仅在空闲且无未保存编辑／弹窗时接收外部变更，再通过正常保存流程刷新，避免覆盖当前输入。
 

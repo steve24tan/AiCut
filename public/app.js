@@ -1,5 +1,6 @@
 import { setupSegments, bindSegmentCard, renderTimeline, rangeText } from './segments.js';
 import { setupJobs, bindJobCard, refreshJobs } from './jobs.js';
+import { setupLibrary, bindLibraryCard, referencesText } from './library.js';
 const $ = selector => document.querySelector(selector);
 const labels = { todo: '待生成', revise: '待微调', review: '待检查', approved: '已确认' };
 let projects = [], project = null, filter = 'all', busy = false, uploadTarget = null;
@@ -75,7 +76,7 @@ function requestText(shot) {
   const number = project.shots.indexOf(shot) + 1;
   const take = shot.takes.find(t => t.id === shot.active_take_id);
   const range = take?.end_ms != null ? `\n原视频范围：${rangeText(take)}（${take.filename}）` : '';
-  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}${range}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。`;
+  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}${range}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}${referencesText(shot)}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。`;
 }
 async function refreshProjects() { projects = await api('/api/projects'); renderProjects(); }
 function renderProjects() {
@@ -154,6 +155,7 @@ function render() {
       await api(`/api/projects/${project.id}/order`, { method: 'PUT', body: JSON.stringify({ ids }) }); await load(project.id);
     }));
     bindJobCard(card, shot);
+    bindLibraryCard(card, shot);
     $('#shots').append(card);
   }
   if (!$('#shots').childElementCount && project.shots.length) {
@@ -222,6 +224,7 @@ window.addEventListener('beforeunload', event => {
 });
 setupSegments({ action, api, toast, shotById, refresh: async id => { filter = 'all'; updateFilters(); await refreshProjects(); await load(id); } });
 await setupJobs({ api, action, toast, textDialog, getProject: () => project, reload: load });
+await setupLibrary({ api, action, toast, getProject: () => project, reload: load });
 setInterval(async () => {
   const dirty = () => [...edits.values()].some(edit => edit.saved < edit.seq || edit.running);
   if (busy || dirty() || document.hidden || document.querySelector('dialog[open]')) return;

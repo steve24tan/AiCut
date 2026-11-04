@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 AiCut is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.6.0` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.7.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -107,6 +107,16 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Maximum file size is 1 GB. Large files, disk-full conditions and production workloads are not benchmarked.
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
+
+## Timeline, audio and agents (v0.7)
+
+A CapCut-style timeline sits above the cards: a preview monitor, the shots laid out as a video track, and audio tracks (BGM / 配音 voice / 音效 SFX) with waveforms. Drop audio files or library sounds onto a track, drag to move, drag clip edges to trim, set track mute and dB. Switch to **▭ 框选时间** and drag across a waveform to box a time range and say what to change there. Each clip keeps every version, so the inspector can A/B the adopted version against another over the same range. Space plays the timeline.
+
+Cards gain **台词** (dialogue): one row per line with character, text and delivery. **角色声音** maps each character to a voice provider, `voice_id` and a description. Dialogue appears in copied requests and CLI snapshots.
+
+**Hand work to agents.** Every "who does this" menu lists live herdr agents next to "manual (copy the instruction)". Audio tasks: process one clip (notes + boxed ranges), mix 2–6 Shift-selected clips, dub a shot's dialogue onto the voice track, or generate BGM from a description. AiCut types a one-line pointer into the agent's pane; the agent reads the task with `cli.mjs`, does the work with its own tools (local stem split/ffmpeg, or an online service such as ElevenLabs via MCP), and imports results as new versions or clips. AiCut itself never processes or generates audio and holds no API keys. Per-shot prompt rewrites can also go to a herdr agent. See [CLI_BRIDGE.md](CLI_BRIDGE.md) and [AGENTS.md](AGENTS.md).
+
+**Export to 剪映 (JianYing / CapCut China).** **导出剪映** downloads a timeline manifest; `python scripts/export_jianying.py manifest.json --drafts "<JianYing drafts folder>"` builds a draft with [pyJianYingDraft](https://github.com/GuanYixuan/pyJianYingDraft) (`pip install pyJianYingDraft`): shots with their source ranges, audio tracks with trims and gain, and dialogue as subtitles in the platform safe area. Restart JianYing to see it.
 
 ## Frame regions (▣ 框选)
 

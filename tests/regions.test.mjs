@@ -75,7 +75,7 @@ test('backup and v4 upgrade keep regions and snapshot the old schema', async () 
   await app.close();
   const legacy = new DatabaseSync(join(dir, 'data', 'workbench.sqlite')); legacy.exec('DROP TABLE shot_regions; PRAGMA user_version=4;'); legacy.close();
   app = await createApp({ dataDir: join(dir, 'data') }); await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
-  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 6);
   assert.deepEqual(app.store.detail(project.id).shots[0].regions, []);
   const snapshot = new DatabaseSync(join(dir, 'data', 'schema-v4-before-v5.sqlite'), { readOnly: true });
   try { assert.equal(snapshot.prepare('PRAGMA user_version').get().user_version, 4); } finally { snapshot.close(); }

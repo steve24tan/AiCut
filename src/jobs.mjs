@@ -25,16 +25,17 @@ export function openJobs(store) {
     try { const value = fn(); db.exec('COMMIT'); return value; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
   }
-  function enqueue(shotId, payload) {
+  function enqueue(shotId, payload, target = null) {
     return transaction(() => {
       const shot = store.shot(shotId); store.expected(shot, payload.revision);
-      if (!['claude', 'codex', 'manual'].includes(payload.provider)) throw new AppError(400, '请选择 Claude Code、Codex 或外部 CLI');
+      if (!['claude', 'codex', 'manual', 'herdr'].includes(payload.provider)) throw new AppError(400, '请选择 Claude Code、Codex、herdr agent 或外部 CLI');
       if (db.prepare("SELECT id FROM jobs WHERE shot_id=? AND status IN ('queued','running')").get(shotId)) throw new AppError(409, '这个片段已有待处理任务，请等待或取消');
       const project = store.detail(shot.project_id);
       const take = project.shots.find(row => row.id === shotId).takes.find(t => t.id === shot.active_take_id);
-      const snapshot = { project: { id: project.id, title: project.title }, shot: { id: shot.id, title: shot.title, number: shot.position + 1, prompt: shot.prompt, notes: shot.notes, revision: shot.revision }, take: take ?? null, references: store.references(shotId), regions: describeRegions(store.regions(shotId)) };
+      const snapshot = { project: { id: project.id, title: project.title }, shot: { id: shot.id, title: shot.title, number: shot.position + 1, prompt: shot.prompt, notes: shot.notes, revision: shot.revision }, take: take ?? null, references: store.references(shotId), regions: describeRegions(store.regions(shotId)), lines: store.lines(shotId).map(({ character, provider, voice_id, voice_notes, text, delivery }) => ({ character, provider, voice_id, voice_notes, text, delivery })) };
       const id = randomUUID(), time = now();
-      db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id, shotId, shot.project_id, payload.provider, 'queued', shot.revision, JSON.stringify(snapshot), null, null, time, time);
+      db.prepare('INSERT INTO jobs(id,shot_id,project_id,provider,status,source_revision,snapshot,result,error,created_at,updated_at,target) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, shotId, shot.project_id, payload.provider, 'queued', shot.revision, JSON.stringify(snapshot), null, null, time, time, target);
       return get(id);
     });
   }
@@ -70,7 +71,7 @@ export function openJobs(store) {
     });
   }
   function recover() {
-    db.prepare("UPDATE jobs SET status='interrupted',error='服务已重启，请手动重新推送；未自动重试',updated_at=? WHERE status='running' OR (status='queued' AND provider<>'manual')").run(now());
+    db.prepare("UPDATE jobs SET status='interrupted',error='服务已重启，请手动重新推送；未自动重试',updated_at=? WHERE status='running' OR (status='queued' AND provider NOT IN ('manual','herdr'))").run(now());
   }
   return { get, enqueue, start, complete, fail, cancel, apply, recover,
     list: projectId => {

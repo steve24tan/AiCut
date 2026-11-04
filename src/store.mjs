@@ -22,7 +22,11 @@ export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
   const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion > 5) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion > 6) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 5) {
+    const backupPath = join(dataDir, 'schema-v5-before-v6.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   if (schemaVersion === 4) {
     const backupPath = join(dataDir, 'schema-v4-before-v5.sqlite');
     if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
@@ -107,8 +111,74 @@ export function openStore(dataDir) {
       CREATE INDEX IF NOT EXISTS shot_regions_shot ON shot_regions(shot_id,position);
       PRAGMA user_version=5; COMMIT;`);
   }
+  if (schemaVersion < 6) {
+    // Audio timeline: offset_ms places a clip on the project timeline; in_ms/out_ms and region times are source-file ms.
+    db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS audio_tracks (
+        id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),title TEXT NOT NULL,kind TEXT NOT NULL,
+        position INTEGER NOT NULL,muted INTEGER NOT NULL DEFAULT 0,gain_db REAL NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS audio_clips (
+        id TEXT PRIMARY KEY,track_id TEXT NOT NULL REFERENCES audio_tracks(id),title TEXT NOT NULL,
+        offset_ms INTEGER NOT NULL DEFAULT 0,in_ms INTEGER NOT NULL DEFAULT 0,out_ms INTEGER,notes TEXT NOT NULL DEFAULT '',
+        active_version_id TEXT,revision INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS audio_versions (
+        id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES audio_clips(id),number INTEGER NOT NULL,
+        media_id TEXT NOT NULL REFERENCES media(id),duration_ms INTEGER,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,
+        UNIQUE(clip_id,number)
+      );
+      CREATE TABLE IF NOT EXISTS audio_regions (
+        id TEXT PRIMARY KEY,clip_id TEXT NOT NULL REFERENCES audio_clips(id),position INTEGER NOT NULL,
+        start_ms INTEGER NOT NULL,end_ms INTEGER NOT NULL,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS audio_tracks_project ON audio_tracks(project_id,position);
+      CREATE INDEX IF NOT EXISTS audio_clips_track ON audio_clips(track_id,offset_ms);
+      CREATE INDEX IF NOT EXISTS audio_versions_clip ON audio_versions(clip_id,number);
+      CREATE INDEX IF NOT EXISTS audio_regions_clip ON audio_regions(clip_id,position);
+      CREATE TABLE IF NOT EXISTS characters (
+        id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),name TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'elevenlabs',voice_id TEXT NOT NULL DEFAULT '',voice_notes TEXT NOT NULL DEFAULT '',
+        revision INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shot_lines (
+        id TEXT PRIMARY KEY,shot_id TEXT NOT NULL REFERENCES shots(id),position INTEGER NOT NULL,
+        character_id TEXT REFERENCES characters(id),text TEXT NOT NULL,delivery TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS characters_project ON characters(project_id,created_at);
+      CREATE INDEX IF NOT EXISTS shot_lines_shot ON shot_lines(shot_id,position);
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),kind TEXT NOT NULL,target TEXT NOT NULL,
+        status TEXT NOT NULL,title TEXT NOT NULL,snapshot TEXT NOT NULL,result TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id,created_at);
+      ${db.prepare("SELECT 1 FROM pragma_table_info('jobs') WHERE name='target'").get() ? '' : 'ALTER TABLE jobs ADD COLUMN target TEXT;'}
+      PRAGMA user_version=6; COMMIT;`);
+  }
   function regions(shotId) {
     return db.prepare('SELECT * FROM shot_regions WHERE shot_id=? ORDER BY position,id').all(shotId);
+  }
+  function lines(shotId) {
+    return db.prepare(`SELECT l.id,l.position,l.character_id,l.text,l.delivery,c.name AS character,c.provider,c.voice_id,c.voice_notes
+      FROM shot_lines l LEFT JOIN characters c ON c.id=l.character_id WHERE l.shot_id=? ORDER BY l.position,l.id`).all(shotId);
+  }
+  function characters(projectId) {
+    return db.prepare('SELECT * FROM characters WHERE project_id=? ORDER BY created_at,id').all(projectId);
+  }
+  // Dialogue is saved as a complete ordered list with the shot's other draft fields.
+  function replaceLines(row, value) {
+    if (!Array.isArray(value) || value.length > 50) throw new AppError(400, '每段最多 50 句台词');
+    const known = new Set(characters(row.project_id).map(c => c.id));
+    const items = value.map(item => {
+      if (!item || typeof item !== 'object') throw new AppError(400, '台词格式不正确');
+      const characterId = item.character_id || null;
+      if (characterId !== null && !known.has(characterId)) throw new AppError(400, '台词的角色不属于这个项目');
+      return { characterId, text: string(item.text ?? '', '台词', 2000), delivery: string(item.delivery ?? '', '语气', 500) };
+    });
+    db.prepare('DELETE FROM shot_lines WHERE shot_id=?').run(row.id);
+    const insert = db.prepare('INSERT INTO shot_lines VALUES(?,?,?,?,?,?)');
+    items.forEach((item, index) => insert.run(randomUUID(), row.id, index, item.characterId, item.text, item.delivery));
   }
   function references(shotId) {
     return db.prepare(`SELECT r.*,a.title,a.tags,a.source_url,a.author,a.license,m.filename,m.mime,m.id AS media_id
@@ -136,10 +206,12 @@ export function openStore(dataDir) {
   }
   function detail(id) {
     const result = project(id);
+    result.characters = characters(id);
     result.shots = db.prepare('SELECT * FROM shots WHERE project_id=? ORDER BY position,id').all(id).map(row => ({
       ...row,
       references: references(row.id),
       regions: regions(row.id),
+      lines: lines(row.id),
       takes: db.prepare(`SELECT t.*, m.filename, m.mime, m.bytes FROM takes t
         LEFT JOIN media m ON m.id=t.media_id WHERE t.shot_id=? ORDER BY t.number DESC`).all(row.id)
     }));
@@ -158,10 +230,16 @@ export function openStore(dataDir) {
     return shot(id);
   }
   function updateShot(id, patch) {
+    if (patch.lines === undefined) return applyShotPatch(id, patch);
+    return transaction(() => applyShotPatch(id, patch));
+  }
+  function applyShotPatch(id, patch) {
     const row = shot(id); expected(row, patch.revision);
-    const fields = ['title', 'prompt', 'notes', 'status', 'active_take_id'];
+    const fields = ['title', 'prompt', 'notes', 'status', 'active_take_id', 'lines'];
     if (Object.keys(patch).some(key => ![...fields, 'revision'].includes(key))) throw new AppError(400, '不支持的修改字段');
-    const next = { ...row, ...patch };
+    if (patch.lines !== undefined) replaceLines(row, patch.lines);
+    const { lines: _lines, ...rest } = patch;
+    const next = { ...row, ...rest };
     next.title = title(next.title);
     string(next.prompt, 'Prompt'); string(next.notes, '备注');
     if (!statuses.includes(next.status)) throw new AppError(400, '状态不正确');
@@ -276,7 +354,7 @@ export function openStore(dataDir) {
     return detail(projectId);
   }
   return {
-    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references, regions,
+    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references, regions, lines, characters,
     listProjects: () => db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM shots s WHERE s.project_id=p.id) AS shot_count
       FROM projects p ORDER BY created_at,id`).all(),
     media: id => db.prepare('SELECT * FROM media WHERE id=?').get(id),

@@ -38,6 +38,16 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.7 audio timeline, dialogue, agent tasks, 剪映 export — 2026-11-04
+
+`npm.cmd test`: 45/45. New suites: `audio.test.mjs` (uploads and library-asset clips, rejected uploads leave no files, clip edit validation, cross-project moves blocked, versions for A/B keep the trim window, stale revisions, duration reported once, audio regions, cascade delete keeps media, timeline manifest, backup, v5→v6 migration snapshot), `voices.test.mjs` (characters, dialogue saved atomically with the shot revision, voice changes block stale adoption, in-use characters cannot be deleted), `tasks.test.mjs` (real herdr adapter against a stand-in CLI: discovery, stopped server, busy/blocked agents refused and recorded as failed, one-line pointer; full agent round trip through real `cli.mjs` subprocesses: claim → `audio version` → complete; voice/music/mix validation and `audio add`; prompt jobs via herdr).
+
+`node scripts/timeline-browser-qa.mjs` (headless Chrome, synthetic PNG/WebM/WAV, stand-in herdr): video track layout with probed duration, audio track creation, WAV upload with waveform and duration report, mouse drag move, edge trim, time-range boxes with autosaved notes, an agent-imported v2 picked up by polling, A/B audition, timeline playback, copy text, push to herdr agent, Shift multi-select mix task, BGM generation dialog, task list, per-shot dubbing task, characters dialog and dialogue lines, cross-track move, remove, mobile width, no runtime exceptions. Bugs found and fixed during QA: a version-ownership query missing a parameter; quick successive character edits sending a stale revision; Shift multi-select ignored in time-box mode; migration robustness when the jobs.target column already exists. `browser-smoke.mjs` and `regions-browser-qa.mjs` still pass.
+
+`node scripts/jianying-export-qa.mjs` (AICUT_PYTHON with pyJianYingDraft 0.3.1 on Python 3.14, AICUT_FFMPEG for synthetic MP4/PNG/WAV): AiCut manifest → `export_jianying.py` → `draft_content.json` with video track (still + split video, correct source start), trimmed BGM at -6 dB (volume ≈0.5), overlapping clip on its own lane, Traditional Chinese subtitles timed across the shot, 1080×1920 canvas.
+
+Not verified: a live herdr server (none runs on the development PC; the adapter follows the herdr 0.9.5 API schema), real ElevenLabs or model calls, opening the generated draft in 剪映, real production media.
+
 ## v0.6 frame region checks — 2026-11-04
 
 `npm.cmd test`: 34/34. New `tests/regions.test.mjs` covers atomic replace and revision bump, rejection of boxes outside the frame / under 0.5% / non-integer / bad time / over 20 boxes / no media / stale revision (saved boxes untouched on failure), regions in the immutable job snapshot and runner instruction, stale-adoption block after editing boxes, segment-bounded times, split copying a box into every overlapping segment with clipped times, backup restore and v4→v5 migration with a pre-upgrade snapshot. Existing migration tests now expect schema 5.

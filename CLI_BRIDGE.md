@@ -1,5 +1,23 @@
 # Local CLI bridge
 
+## herdr agents (v0.7)
+
+When the `herdr` CLI is on PATH (or `SHOT_HERDR_BIN` points at it) and a herdr server is running for the same user, AiCut lists live agents (`GET /api/herdr/agents`, from `herdr agent list`). Every "交给谁" dropdown — per-shot prompt jobs, audio processing, mix, dubbing, BGM generation — offers those agents next to "手动 · 复制指令". Choosing one creates the task in AiCut and types a single-line pointer into that pane with `herdr agent prompt <name> "<text>"`; the agent reads and claims the task with `cli.mjs`, so it keeps its own model, tools, MCP servers and project context (e.g. the GA lead). AiCut refuses to type into an agent whose state is `working` or `blocked`; the refused task stays visible as failed. Manual tasks copy the same pointer to the clipboard instead.
+
+Audio tasks:
+
+```sh
+node cli.mjs tasks list [PROJECT_ID]
+node cli.mjs tasks read TASK_ID
+node cli.mjs tasks claim TASK_ID
+node cli.mjs audio version CLIP_ID out.wav --note "drums -9 dB"
+node cli.mjs audio add TRACK_ID line.mp3 --offset 2.5 --title "Lorraine · 欢迎"
+node cli.mjs tasks complete TASK_ID --file result.json   # {"summary":"…","outputs":[…]}
+node cli.mjs tasks fail TASK_ID --message "reason"
+```
+
+Kinds: `process` (one clip: notes + time-range boxes + local file paths), `mix` (2–6 clips, output track), `voice` (a shot's dialogue with each character's voice_id/notes, voice track and the shot's timeline offset), `music` (description, length, offset, BGM track). Prompt jobs gained the same `jobs fail` command and a `herdr` provider. Restarting AiCut marks claimed (running) work interrupted, as before; queued herdr/manual work stays queued.
+
 Use a new Claude Code/Codex task started by a card, or read/complete queued work from your existing agent session. Both preserve a task snapshot and require explicit adoption in the UI.
 
 ## Automatic dispatch

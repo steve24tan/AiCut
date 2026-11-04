@@ -1,6 +1,10 @@
-# 本地工作台架构 · v0.6
+# 本地工作台架构 · v0.7
 
 ## 目标与选择
+
+v0.7 增加剪映式时间线与音频协作。schema v6（v5 升级前生成 schema-v5-before-v6.sqlite）：audio_tracks（类型 bgm/voice/sfx/other、静音、dB）、audio_clips（时间线 offset_ms、源文件 in_ms/out_ms、整段修改要求、采用版本）、audio_versions（同一片段多个媒体版本，供 A/B；时长由浏览器解码后回报一次）、audio_regions（源文件时间的框选与说明）、characters（角色 → provider/voice_id/声音描述）、shot_lines（每段台词，随片段草稿一起按 revision 保存）、tasks（音频任务快照与结果），jobs 增加 target 栏。src/audio.mjs、src/voices.mjs、src/tasks.mjs、src/herdr.mjs、src/export.mjs 分别负责；server.mjs 的上传抽成 receive()，镜头导入、素材库与音频共用。
+
+时间线（public/timeline.js）在浏览器里用 Web Audio 解码、画波形、按 offset 排程播放，视频轨按片段顺序与时长（区间长度、探测的视频长度、图片 2 秒）排布并同步预览窗。拖动移动／裁剪、框选时间、Shift 多选都只写数据库，不改媒体。AiCut 不处理也不生成音频：任务快照写明要求、本地文件路径与 deliver 命令，agent 用 cli.mjs 导回新版本或新片段，再 complete。herdr 适配只调用 `herdr agent list` 与 `herdr agent prompt`（execFile，无 shell，名称白名单），忙碌或等确认的 agent 不推送。剪映导出：页面提交各段时长，服务端组装带绝对路径的 manifest，scripts/export_jianying.py 用 pyJianYingDraft 生成草稿；同一音轨重叠片段拆到额外轨，台词按段均分成字幕，放在画面约 72% 高度。
 
 v0.6 增加画面框选：src/regions.mjs 校验并整组替换某段的框（PUT /api/shots/:id/regions，需 revision），public/regions.js / regions.css 提供框选对话框、卡片叠加层与标注图／mask 导出（浏览器 canvas 生成，服务端不解码媒体）。schema v5 增加 shot_regions（shot 外键、顺序、x/y/w/h 为画面 1/10000 整数、段内 start_ms、end_ms 为空表示到段尾、说明）；v4 升级前生成 schema-v4-before-v5.sqlite。每段最多 20 个框，宽高至少 0.5%。修改框会增加片段 revision，阻止旧 CLI 结果覆盖。任务快照的 regions 字段给出百分比坐标、方位词与时间；runner 指令要求只改框内并写明框外不变。分段时框按时间跨度复制到每个重叠的新段并裁到该段；不与任何新段重叠的框留在第一段原样保留。框只描述修改位置，不改像素，不做合成。
 

@@ -2,6 +2,9 @@ import { setupSegments, bindSegmentCard, renderTimeline, rangeText } from './seg
 import { setupJobs, bindJobCard, refreshJobs } from './jobs.js';
 import { setupLibrary, bindLibraryCard, referencesText } from './library.js';
 import { setupRegions, bindRegionCard, regionsText } from './regions.js';
+import { setupEditor, renderEditor, editorBusy, audioState, currentPlayhead, shotStart } from './timeline.js';
+import { setupTasks } from './tasks.js';
+import { setupVoices, bindLinesCard, linesText } from './voices.js';
 const $ = selector => document.querySelector(selector);
 const labels = { todo: '待生成', revise: '待微调', review: '待检查', approved: '已确认' };
 let projects = [], project = null, filter = 'all', busy = false, uploadTarget = null;
@@ -77,7 +80,7 @@ function requestText(shot) {
   const number = project.shots.indexOf(shot) + 1;
   const take = shot.takes.find(t => t.id === shot.active_take_id);
   const range = take?.end_ms != null ? `\n原视频范围：${rangeText(take)}（${take.filename}）` : '';
-  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}${range}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}${referencesText(shot)}${regionsText(shot)}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。${shot.regions?.length ? '本段有画面框选：只改框内，框外画面保持不变。' : ''}`;
+  return `项目：${project.title}\n片段：${String(number).padStart(2, '0')} · ${shot.title}\n采用版本：${take ? 'v' + take.number : '尚无'}${range}\n\n【当前 Prompt／内容草稿】\n${shot.prompt || '（未填写）'}\n\n【本段修改要求】\n${shot.notes || '（未填写）'}${linesText(shot)}${referencesText(shot)}${regionsText(shot)}\n\n请根据以上要求修改这个片段，返回可直接使用的完整修改稿。修改范围限于本段，其他片段保持原样。${shot.regions?.length ? '本段有画面框选：只改框内，框外画面保持不变。' : ''}`;
 }
 async function refreshProjects() { projects = await api('/api/projects'); renderProjects(); }
 function renderProjects() {
@@ -94,20 +97,24 @@ async function load(id) {
   project = next; edits.clear(); renderProjects(); render(); saveState();
   await refreshJobs();
 }
-function render() {
-  $('#project-title').textContent = project?.title || '你的下一段，从这里开始。';
-  $('#project-description').textContent = project ? '逐段查看，随手记下修改，再把新版放回来。' : '每个片段，都有自己的想法、修改与版本。';
-  for (const id of ['export', 'import-files', 'add-shot']) $('#' + id).disabled = !project;
-  $('#total').textContent = project?.shots.length || 0;
-  $('#empty').hidden = Boolean(project?.shots.length);
-  $('#empty-create').textContent = project ? '添加第一个片段' : '创建第一个项目';
-  $('#shots').replaceChildren();
-  renderTimeline(project, id => action(async () => {
+function focusShot(id) {
+  action(async () => {
     filter = 'all'; updateFilters(); render();
     const card = document.querySelector(`[data-id="${id}"]`);
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     card.querySelector('textarea').focus({ preventScroll: true });
-  }));
+  });
+}
+function render() {
+  $('#project-title').textContent = project?.title || '你的下一段，从这里开始。';
+  $('#project-description').textContent = project ? '逐段查看，随手记下修改，再把新版放回来。' : '每个片段，都有自己的想法、修改与版本。';
+  for (const id of ['voices', 'export', 'import-files', 'add-shot']) $('#' + id).disabled = !project;
+  $('#total').textContent = project?.shots.length || 0;
+  $('#empty').hidden = Boolean(project?.shots.length);
+  $('#empty-create').textContent = project ? '添加第一个片段' : '创建第一个项目';
+  $('#shots').replaceChildren();
+  renderTimeline(project, focusShot);
+  renderEditor(project);
   if (!project) return;
   for (const [index, shot] of project.shots.entries()) {
     if (filter !== 'all' && shot.status !== filter) continue;
@@ -131,6 +138,7 @@ function render() {
     } else if (take) card.querySelector('.media-placeholder p').textContent = '文字快照 · v' + take.number;
     bindSegmentCard(card, shot, take);
     bindRegionCard(card, shot, take);
+    bindLinesCard(card, shot);
     const select = card.querySelector('.take-select');
     if (!shot.takes.length) { select.add(new Option('尚无版本', '')); select.disabled = true; }
     for (const version of shot.takes) select.add(new Option(`v${version.number} · ${version.filename || '文字快照'}`, version.id));
@@ -220,16 +228,19 @@ $('#export').addEventListener('click', () => action(async () => {
   const link = document.createElement('a'); link.href = url; link.download = 'shot-revisions.md'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('已导出文字清单；素材备份请看使用说明');
 }));
-$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n8. ▣ 框选：在画面上拖出要改的区域，每个框写一句要求；复制请求和 CLI 任务会写明只改框内。可下载标注图和 mask。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n核心管理可离线使用；可选 CLI 作业使用其订阅账号与网络连接。`, 'AiCut v0.6.0 · 本地分段创作工作台'));
+$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n8. ▣ 框选：在画面上拖出要改的区域，每个框写一句要求；复制请求和 CLI 任务会写明只改框内。可下载标注图和 mask。\n9. 时间线：上面视频轨、下面音轨。拖动移动、拖边缘裁剪、「▭ 框选时间」在波形上标出要改的段落；空格播放。每段音频保留所有版本，可 A/B 试听。\n10. 台词与角色声音：每段写台词，「角色声音」设定 voice_id；「生成配音」交给 agent。\n11. 交给 agent：选 herdr 里的 agent，或「手动」复制指令。agent 处理完把新音频导回为新版本。「AI 任务」查看进度。\n12. 导出剪映：下载时间线清单，再运行 scripts/export_jianying.py 生成剪映草稿。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n核心管理可离线使用；可选 CLI 作业使用其订阅账号与网络连接。`, 'AiCut v0.7.0 · 本地分段创作工作台'));
 window.addEventListener('beforeunload', event => {
-  if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy) { event.preventDefault(); event.returnValue = ''; }
+  if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy || editorBusy()) { event.preventDefault(); event.returnValue = ''; }
 });
 setupRegions({ action, api, toast, shotById, reload: load });
+setupEditor({ action, api, toast, copy, focusShot, busy: () => busy });
+setupVoices({ action, api, toast, markEdit, getProject: () => project, reload: load });
+setupTasks({ action, api, toast, copy, textDialog, getProject: () => project, getAudio: audioState, getPlayhead: currentPlayhead, shotStart });
 setupSegments({ action, api, toast, shotById, refresh: async id => { filter = 'all'; updateFilters(); await refreshProjects(); await load(id); } });
 await setupJobs({ api, action, toast, textDialog, getProject: () => project, reload: load });
 await setupLibrary({ api, action, toast, getProject: () => project, reload: load });
 setInterval(async () => {
-  const dirty = () => [...edits.values()].some(edit => edit.saved < edit.seq || edit.running);
+  const dirty = () => [...edits.values()].some(edit => edit.saved < edit.seq || edit.running) || editorBusy();
   if (busy || dirty() || document.hidden || document.querySelector('dialog[open]')) return;
   const id = project?.id;
   try {

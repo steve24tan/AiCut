@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="/jobs.css">
   <link rel="stylesheet" href="/library.css">
   <link rel="stylesheet" href="/regions.css">
+  <link rel="stylesheet" href="/timeline.css">
+  <link rel="stylesheet" href="/voices.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -22,9 +24,26 @@
   <main>
     <header class="topbar"><span>工作空间 <span class="slash">/</span> 分镜工作台</span><button id="toggle-library" aria-pressed="false">▦ 素材库扩展</button><span id="save-state" role="status">正在连接本地服务…</span></header>
     <section class="workspace">
-      <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
+      <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="voices" disabled title="角色与配音声音对照表">角色声音</button><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
       <div class="board-bar"><div class="filters" role="group" aria-label="按状态筛选"><button data-filter="all" class="selected">全部片段 <span id="total">0</span></button><button data-filter="revise">待微调</button><button data-filter="approved">已确认</button></div><span class="board-hint">编号随顺序更新 · 用箭头调整顺序</span></div>
       <nav id="timeline" class="timeline" aria-label="片段导航"></nav>
+      <section id="editor" class="editor" hidden aria-label="时间线">
+        <div class="editor-toolbar">
+          <button id="editor-start" title="回到开头" aria-label="回到开头">⏮</button><button id="editor-play" class="primary" aria-label="播放或暂停（空格键）">▶</button><span id="editor-time">00:00.00 / 00:00.00</span>
+          <div class="editor-modes" role="group" aria-label="编辑工具"><button data-editor-mode="move" class="selected" title="拖动移动片段，拖左右边缘裁剪">↔ 移动 / 裁剪</button><button data-editor-mode="select" title="在音频波形上拖出要修改的时间段">▭ 框选时间</button></div>
+          <div class="editor-zoom" role="group" aria-label="缩放"><button id="editor-zoom-out" aria-label="缩小">－</button><button id="editor-fit">适合宽度</button><button id="editor-zoom-in" aria-label="放大">＋</button></div>
+          <div class="editor-add"><button data-add-track="bgm">＋ BGM</button><button data-add-track="voice">＋ 配音</button><button data-add-track="sfx">＋ 音效</button><button id="editor-import" title="导入到选中片段所在音轨，或第一条音轨，从播放头开始">导入音频</button><button id="editor-music" title="描述想要的音乐，交给 agent 生成后放上 BGM 音轨">生成 BGM</button><button id="editor-tasks" title="查看推送给 agent 的音频任务">AI 任务</button><button id="editor-export" title="导出时间线清单，再用 scripts/export_jianying.py 生成剪映草稿">导出剪映</button></div>
+          <input id="editor-files" type="file" accept=".mp3,.wav,.ogg,.m4a,.flac" multiple hidden>
+        </div>
+        <div class="editor-main">
+          <div id="editor-monitor" class="editor-monitor"><video muted playsinline preload="auto" hidden></video><img alt="当前画面" hidden><div class="monitor-empty"></div></div>
+          <div class="editor-tracks">
+            <div class="editor-head-column"><div class="ruler-head"></div><div id="editor-heads"></div></div>
+            <div id="editor-scroll" class="editor-scroll"><div id="editor-canvas" class="editor-canvas"><canvas id="editor-ruler" aria-label="时间尺，点击或拖动定位"></canvas><div id="editor-lanes"></div></div></div>
+          </div>
+        </div>
+        <div id="editor-inspector" class="editor-inspector" aria-live="polite"></div>
+      </section>
       <div id="empty" class="empty"><span class="empty-mark">▤</span><h2>把想法拆成容易修改的小段</h2><p>建立一个项目，添加片段，再把视频、Prompt 和修改要求放在一起。</p><button id="empty-create" class="primary">创建第一个项目</button></div>
       <div id="shots" class="shot-grid" aria-live="polite"></div>
     </section>
@@ -81,6 +100,27 @@
       <div><p id="region-summary" role="status"></p><div id="region-list"></div></div>
     </div>
     <div class="dialog-actions region-dialog-actions"><button id="region-export-frame" title="当前画面加上红框编号，原尺寸 PNG">下载标注图</button><button id="region-export-mask" title="框内白、框外黑，原尺寸 PNG，给支持局部重绘的工具">下载 mask</button><span class="spacer"></span><button data-close>取消</button><button id="region-save" class="primary">保存框选</button></div>
+  </dialog>
+  <dialog id="music-dialog"><form id="music-form">
+    <div class="dialog-head"><h2>生成 BGM</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div>
+    <p>描述想要的音乐，交给 agent 生成（例如用 ElevenLabs 音乐），生成后会作为新片段放上所选 BGM 音轨。</p>
+    <label>想要什么样的音乐？<textarea id="music-prompt" rows="4" maxlength="5000" required placeholder="例如：轻快的日式搞笑 BGM，前 8 秒含蓄只有钢琴，之后鼓点慢慢进来，30 秒，结尾干净收住"></textarea></label>
+    <div class="music-fields"><label>长度（秒）<input id="music-duration" type="number" min="3" max="600" step="1" value="30" required></label><label>放在时间线第几秒<input id="music-offset" type="number" min="0" step="0.01" value="0"></label><label>音轨<select id="music-track"></select></label></div>
+    <label>交给谁<select id="music-target"></select></label>
+    <div class="dialog-actions"><button type="button" data-close>取消</button><button class="primary" type="submit">推送生成任务 →</button></div>
+  </form></dialog>
+  <dialog id="tasks-dialog">
+    <div class="dialog-head"><h2>AI 音频任务</h2><button data-close class="icon" aria-label="关闭">×</button></div>
+    <p>推送给 herdr agent 或手动复制指令的任务。agent 用 cli.mjs 领取、导回音频并回报结果；新音频不会覆盖旧版本。</p>
+    <div id="tasks-list"></div>
+    <div class="dialog-actions"><button data-close>关闭</button></div>
+  </dialog>
+  <dialog id="voices-dialog">
+    <div class="dialog-head"><h2>角色声音</h2><button data-close class="icon" aria-label="关闭">×</button></div>
+    <p>每个角色对应一个配音声音。voice_id 填 ElevenLabs 的声音 ID；还没选好可以先写声音描述。复制请求和 CLI 任务会带上这些信息。</p>
+    <div id="voices-list"></div>
+    <form id="voice-add"><input id="voice-name" maxlength="100" placeholder="新角色名称，例如：Lorraine" aria-label="新角色名称"><button class="primary" type="submit">＋ 角色</button></form>
+    <div class="dialog-actions"><button data-close>完成</button></div>
   </dialog>
   <template id="shot-template">
     <article class="shot-card">

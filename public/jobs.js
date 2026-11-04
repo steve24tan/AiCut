@@ -1,9 +1,12 @@
-let ctx, providers = [], records = [], loading = false;
+import { agentInfo, agentLabel, remember } from './agents.js';
+let ctx, providers = [], records = [], loading = false, herdrAgents = [];
 const labels = { queued: '排队中', running: 'CLI 作业中', completed: '已完成，待采用', failed: '执行失败', cancelled: '已取消', interrupted: '已中断，请重新推送', applied: '已采用' };
-const names = { claude: 'Claude Code', codex: 'Codex CLI', manual: '外部 CLI 领取' };
+const names = { claude: 'Claude Code', codex: 'Codex CLI', manual: '外部 CLI 领取', herdr: 'herdr agent' };
+const providerName = job => job.provider === 'herdr' && job.target ? job.target.replace(/^herdr:/, 'herdr · ') : names[job.provider];
 export async function setupJobs(context) {
   ctx = context;
   try { providers = await ctx.api('/api/cli'); } catch { providers = []; }
+  herdrAgents = (await agentInfo(ctx.api)).agents;
   document.addEventListener('workbench-idle', () => { for (const card of document.querySelectorAll('.shot-card')) updateCard(card); });
   setInterval(() => { if (!document.hidden) refreshJobs().catch(() => {}); }, 1500);
 }
@@ -25,11 +28,16 @@ export function bindJobCard(card, shot) {
     const available = id === 'manual' || providers.find(p => p.id === id)?.available;
     const option = new Option(names[id] + (available ? '' : ' · 未安装'), id); option.disabled = !available; select.add(option);
   }
+  // herdr agents keep their own model and project context (e.g. the GA lead), unlike a fresh CLI process.
+  for (const agent of herdrAgents) select.add(new Option(agentLabel(agent), `herdr:${agent.target}`));
   select.value = providers.find(p => p.available)?.id || 'manual';
   const push = document.createElement('button'); push.className = 'push-job'; push.textContent = '推送任务 →';
   push.addEventListener('click', () => ctx.action(async () => {
-    await ctx.api(`/api/shots/${shot.id}/jobs`, { method: 'POST', body: JSON.stringify({ revision: shot.revision, provider: select.value }) });
-    await refreshJobs(); ctx.toast(select.value === 'manual' ? '已进入外部 CLI 待办队列' : '已交给本地 CLI；完成后可预览并采用');
+    const herdr = select.value.startsWith('herdr:');
+    const body = herdr ? { revision: shot.revision, provider: 'herdr', target: select.value.slice(6) } : { revision: shot.revision, provider: select.value };
+    if (herdr) remember(select.value);
+    await ctx.api(`/api/shots/${shot.id}/jobs`, { method: 'POST', body: JSON.stringify(body) });
+    await refreshJobs(); ctx.toast(herdr ? `已推送给 ${select.value.replace('herdr:', 'herdr · ')}；完成后可预览并采用` : select.value === 'manual' ? '已进入外部 CLI 待办队列' : '已交给本地 CLI；完成后可预览并采用');
   }));
   row.append(select, push);
   const status = document.createElement('div'); status.className = 'job-state'; status.setAttribute('role', 'status');
@@ -47,16 +55,16 @@ function updateCard(card) {
   const previousSelection = actions.querySelector('select')?.value;
   card.dataset.jobsKey = key;
   const job = items[0]; actions.replaceChildren();
-  state.textContent = job ? `${names[job.provider]} · ${labels[job.status]}${job.error ? ' · ' + job.error : ''}` : '尚未推送任务';
+  state.textContent = job ? `${providerName(job)} · ${labels[job.status]}${job.error ? ' · ' + job.error : ''}` : '尚未推送任务';
   if (!job) return;
   const history = document.createElement('select'); history.setAttribute('aria-label', '任务记录');
-  for (const item of items) history.add(new Option(`${new Date(item.created_at).toLocaleTimeString()} · ${names[item.provider]} · ${labels[item.status]}`, item.id));
+  for (const item of items) history.add(new Option(`${new Date(item.created_at).toLocaleTimeString()} · ${providerName(item)} · ${labels[item.status]}`, item.id));
   if (items.some(item => item.id === previousSelection)) history.value = previousSelection;
   const view = document.createElement('button'); view.textContent = '查看任务 / 结果';
   view.addEventListener('click', async () => {
     try {
       const detail = await ctx.api(`/api/jobs/${history.value}`);
-      ctx.textDialog('CLI 任务与结果', `任务 ID：${detail.id}\n执行器：${names[detail.provider]}\n状态：${labels[detail.status]}\n\n【推送时的片段内容】\n${JSON.stringify(detail.snapshot, null, 2)}\n\n【返回的修改稿】\n${detail.result?.revised_prompt || '尚无结果'}\n\n【修改说明】\n${detail.result?.summary || detail.error || ''}`, '任务保存推送时的快照。CLI 不会自动覆盖当前草稿；采用结果会保留旧文字快照。');
+      ctx.textDialog('CLI 任务与结果', `任务 ID：${detail.id}\n执行器：${providerName(detail)}\n状态：${labels[detail.status]}\n\n【推送时的片段内容】\n${JSON.stringify(detail.snapshot, null, 2)}\n\n【返回的修改稿】\n${detail.result?.revised_prompt || '尚无结果'}\n\n【修改说明】\n${detail.result?.summary || detail.error || ''}`, '任务保存推送时的快照。CLI 不会自动覆盖当前草稿；采用结果会保留旧文字快照。');
     } catch (error) { ctx.toast(error.message, true); }
   });
   actions.append(history, view);

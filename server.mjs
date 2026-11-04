@@ -11,6 +11,11 @@ import { openJobs } from './src/jobs.mjs';
 import { createRunner } from './src/runner.mjs';
 import { openLibrary, libraryManifest } from './src/library.mjs';
 import { openRegions } from './src/regions.mjs';
+import { openAudio, audioTypes } from './src/audio.mjs';
+import { openVoices } from './src/voices.mjs';
+import { openTasks, taskKinds } from './src/tasks.mjs';
+import { createHerdr } from './src/herdr.mjs';
+import { buildManifest } from './src/export.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
@@ -62,7 +67,7 @@ async function sendFile(req, res, path, mime, allowRange = false) {
   await pipeline(createReadStream(path, { start, end }), res);
 }
 
-export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(root, 'data'), executor } = {}) {
+export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(root, 'data'), executor, herdr = createHerdr() } = {}) {
   dataDir = resolve(dataDir);
   const mediaDir = join(dataDir, 'media');
   await mkdir(mediaDir, { recursive: true });
@@ -70,7 +75,51 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
   const jobs = openJobs(store);
   const library = openLibrary(store);
   const regions = openRegions(store);
+  const audio = openAudio(store);
+  const voices = openVoices(store);
+  const tasks = openTasks(store, audio, mediaDir);
   const runner = createRunner(jobs, dataDir, { executor });
+  // One-line pointer typed into the agent's pane; the full request stays in AiCut for the agent to read.
+  function pointer(kind, id, title) {
+    const port = server.address().port, env = port === 4317 ? '' : `（先设置环境变量 SHOT_WORKBENCH_URL=http://127.0.0.1:${port}）`;
+    const group = kind === 'prompt' ? 'jobs' : 'tasks';
+    const result = kind === 'prompt' ? '{"revised_prompt":"完整修改稿","summary":"改了什么"}' : '{"summary":"做了什么","outputs":[{"clip_id":"...","version_id":"..."}]}';
+    return `[AiCut] 新任务 ${id}（${kind === 'prompt' ? '改写 Prompt' : taskKinds[kind]}：${title.replace(/\s+/g, ' ')}）。请在 ${root} 目录${env}运行 node cli.mjs ${group} read ${id} 查看完整需求，node cli.mjs ${group} claim ${id} 领取；按要求处理${kind === 'prompt' ? '' : '并按 deliver 把音频导回 AiCut'}，最后 node cli.mjs ${group} complete ${id} --file result.json 回报，result.json 格式 ${result}。做不了就 node cli.mjs ${group} fail ${id} --message "原因"。`;
+  }
+  async function dispatch(kind, record, target, fail) {
+    if (!target.startsWith('herdr:')) return record;
+    try { await herdr.prompt(target.slice(6), pointer(kind, record.id, record.title ?? record.snapshot.shot.title)); return record; }
+    catch (error) { fail(record.id, `herdr 推送失败：${error.message}`); throw error; }
+  }
+  function targetOf(value) {
+    if (value === undefined || value === 'manual') return 'manual';
+    if (typeof value === 'string' && /^herdr:([a-z][a-z0-9_-]{0,31}|w\d+:p\d+)$/.test(value)) return value;
+    throw new AppError(400, '执行方式应为 manual 或 herdr:<agent 名称>');
+  }
+  // Streams one upload into media/, then lets `insert` record it; any failure removes the partial and final files.
+  async function receive(req, url, allowed, unsupported, insert) {
+    const filename = basename((url.searchParams.get('filename') || '').replaceAll('\\', '/'));
+    const ext = extname(filename).toLowerCase(); const mime = allowed[ext];
+    if (!mime || filename.length > 255) throw new AppError(415, unsupported);
+    const length = Number(req.headers['content-length']);
+    if (length > MAX_UPLOAD) throw new AppError(413, '单个素材上限 1 GB');
+    const id = randomUUID(); const storedName = id + ext;
+    const temp = join(mediaDir, id + '.part'); const target = join(mediaDir, storedName);
+    const hash = createHash('sha256'); let bytes = 0;
+    try {
+      const meter = new Transform({ transform(chunk, _, callback) {
+        bytes += chunk.length;
+        if (bytes > MAX_UPLOAD) return callback(new AppError(413, '单个素材上限 1 GB'));
+        hash.update(chunk); callback(null, chunk);
+      } });
+      await pipeline(req, meter, createWriteStream(temp, { flags: 'wx' }));
+      if (!bytes) throw new AppError(400, '素材文件不能为空');
+      await rename(temp, target);
+      return insert({ id, filename, stored_name: storedName, mime, bytes, sha256: hash.digest('hex') });
+    } catch (error) {
+      await rm(temp, { force: true }); await rm(target, { force: true }); throw error;
+    }
+  }
   const server = http.createServer(async (req, res) => {
     for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
     try {
@@ -95,17 +144,40 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       if ((m = /^\/api\/shots\/([\w-]+)\/regions$/.exec(path)) && req.method === 'PUT') return json(res, 200, regions.replace(m[1], await body(req)));
       if ((m = /^\/api\/shots\/([\w-]+)\/jobs$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req);
+        if (payload.provider === 'herdr') {
+          const target = targetOf(`herdr:${payload.target}`);
+          const job = jobs.enqueue(m[1], payload, target);
+          await dispatch('prompt', job, target, (id, error) => { jobs.start(id); jobs.fail(id, error); });
+          return json(res, 202, job);
+        }
         if (payload.provider !== 'manual' && !runner.providers().find(item => item.id === payload.provider)?.available) throw new AppError(400, '未找到本机 CLI，请安装并登录后重启服务，或选择外部 CLI');
         const job = jobs.enqueue(m[1], payload);
         if (job.provider !== 'manual') runner.submit(job.id);
         return json(res, 202, job);
       }
+      if (path === '/api/herdr/agents' && req.method === 'GET') return json(res, 200, await herdr.agents());
+      if (path === '/api/tasks' && req.method === 'GET') return json(res, 200, tasks.list(url.searchParams.get('project')));
+      if ((m = /^\/api\/projects\/([\w-]+)\/tasks$/.exec(path)) && req.method === 'POST') {
+        const payload = await body(req), target = targetOf(payload.target);
+        const task = tasks.enqueue(m[1], payload, target);
+        await dispatch(task.kind, task, target, tasks.fail);
+        return json(res, 202, { ...tasks.get(task.id), pointer: pointer(task.kind, task.id, task.title) });
+      }
+      if ((m = /^\/api\/tasks\/([\w-]+)$/.exec(path)) && req.method === 'GET') { const task = tasks.get(m[1]); return json(res, 200, { ...task, pointer: pointer(task.kind, task.id, task.title) }); }
+      if ((m = /^\/api\/tasks\/([\w-]+)\/(claim|complete|fail|cancel)$/.exec(path)) && req.method === 'POST') {
+        const payload = await body(req), id = m[1];
+        if (m[2] === 'claim') return json(res, 200, tasks.claim(id));
+        if (m[2] === 'complete') return json(res, 200, tasks.complete(id, payload));
+        if (m[2] === 'fail') return json(res, 200, tasks.fail(id, payload.message));
+        return json(res, 200, tasks.cancel(id));
+      }
       if ((m = /^\/api\/jobs\/([\w-]+)$/.exec(path)) && req.method === 'GET') return json(res, 200, jobs.get(m[1]));
-      if ((m = /^\/api\/jobs\/([\w-]+)\/(apply|cancel|claim|complete)$/.exec(path)) && req.method === 'POST') {
+      if ((m = /^\/api\/jobs\/([\w-]+)\/(apply|cancel|claim|complete|fail)$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req), id = m[1], command = m[2];
         if (command === 'cancel') return json(res, 200, runner.cancel(id));
         if (command === 'apply') return json(res, 200, jobs.apply(id, payload.revision));
-        if (jobs.get(id).provider !== 'manual') throw new AppError(409, '内置执行任务由本地服务管理，外部 CLI 请领取 manual 任务');
+        if (!['manual', 'herdr'].includes(jobs.get(id).provider)) throw new AppError(409, '内置执行任务由本地服务管理，外部 CLI 请领取 manual / herdr 任务');
+        if (command === 'fail') { const job = jobs.get(id); if (job.status === 'queued') jobs.start(id); jobs.fail(id, payload.message || '未说明原因'); return json(res, 200, jobs.get(id)); }
         return json(res, 200, command === 'claim' ? jobs.start(id) : jobs.complete(id, payload));
       }
       if ((m = /^\/api\/projects\/([\w-]+)$/.exec(path)) && req.method === 'GET') return json(res, 200, store.detail(m[1]));
@@ -132,36 +204,41 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         const shotId = isLibrary ? null : m[1];
         const revision = Number(req.headers['x-shot-revision']);
         if (!isLibrary) store.expected(store.shot(shotId), revision);
-        const filename = basename((url.searchParams.get('filename') || '').replaceAll('\\', '/'));
-        const ext = extname(filename).toLowerCase(); const mime = (isLibrary ? libraryTypes : types)[ext];
-        if (!mime || filename.length > 255) throw new AppError(415, isLibrary ? '素材库支持常见音频、GIF、图片与视频格式' : '支持 MP4、WebM、MOV、PNG、JPG、WebP');
-        const length = Number(req.headers['content-length']);
-        if (length > MAX_UPLOAD) throw new AppError(413, '单个素材上限 1 GB');
-        const id = randomUUID(); const storedName = id + ext;
-        const temp = join(mediaDir, id + '.part'); const target = join(mediaDir, storedName);
-        const hash = createHash('sha256'); let bytes = 0;
-        try {
-          const meter = new Transform({ transform(chunk, _, callback) {
-            bytes += chunk.length;
-            if (bytes > MAX_UPLOAD) return callback(new AppError(413, '单个素材上限 1 GB'));
-            hash.update(chunk); callback(null, chunk);
-          } });
-          await pipeline(req, meter, createWriteStream(temp, { flags: 'wx' }));
-          if (!bytes) throw new AppError(400, '素材文件不能为空');
-          await rename(temp, target);
-          const media = { id, filename, stored_name: storedName, mime, bytes, sha256: hash.digest('hex') };
-          const result = isLibrary ? library.add(media) : store.addTake(shotId, revision, media);
-          return json(res, 201, result);
-        } catch (error) {
-          await rm(temp, { force: true }); await rm(target, { force: true }); throw error;
-        }
+        const result = await receive(req, url, isLibrary ? libraryTypes : types, isLibrary ? '素材库支持常见音频、GIF、图片与视频格式' : '支持 MP4、WebM、MOV、PNG、JPG、WebP',
+          media => isLibrary ? library.add(media) : store.addTake(shotId, revision, media));
+        return json(res, 201, result);
       }
+      if ((m = /^\/api\/projects\/([\w-]+)\/characters$/.exec(path)) && req.method === 'GET') { store.project(m[1]); return json(res, 200, store.characters(m[1])); }
+      if ((m = /^\/api\/projects\/([\w-]+)\/characters$/.exec(path)) && req.method === 'POST') return json(res, 201, voices.create(m[1], await body(req)));
+      if ((m = /^\/api\/characters\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res, 200, voices.update(m[1], await body(req)));
+      if ((m = /^\/api\/characters\/([\w-]+)$/.exec(path)) && req.method === 'DELETE') return json(res, 200, voices.remove(m[1], (await body(req)).revision));
+      if ((m = /^\/api\/projects\/([\w-]+)\/audio$/.exec(path)) && req.method === 'GET') return json(res, 200, audio.detail(m[1]));
+      if ((m = /^\/api\/projects\/([\w-]+)\/timeline-export$/.exec(path)) && req.method === 'POST') return json(res, 200, buildManifest(store, audio, mediaDir, m[1], await body(req)));
+      if ((m = /^\/api\/projects\/([\w-]+)\/audio\/tracks$/.exec(path)) && req.method === 'POST') return json(res, 201, audio.createTrack(m[1], await body(req)));
+      if ((m = /^\/api\/audio\/tracks\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res, 200, audio.updateTrack(m[1], await body(req)));
+      if ((m = /^\/api\/audio\/tracks\/([\w-]+)$/.exec(path)) && req.method === 'DELETE') return json(res, 200, audio.deleteTrack(m[1], (await body(req)).revision));
+      if ((m = /^\/api\/audio\/tracks\/([\w-]+)\/clips$/.exec(path)) && req.method === 'POST') {
+        if (req.headers['content-type']?.startsWith('application/json')) return json(res, 201, audio.addClip(m[1], await body(req)));
+        audio.track(m[1]);
+        const payload = { offset_ms: Number(url.searchParams.get('offset_ms') ?? 0), title: url.searchParams.get('title') ?? '', note: url.searchParams.get('note') ?? '' };
+        return json(res, 201, await receive(req, url, audioTypes, '音轨支持 MP3、WAV、OGG、M4A、FLAC', media => audio.addClip(m[1], payload, media)));
+      }
+      if ((m = /^\/api\/audio\/clips\/([\w-]+)$/.exec(path)) && req.method === 'GET') return json(res, 200, audio.clip(m[1]));
+      if ((m = /^\/api\/audio\/clips\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res, 200, audio.updateClip(m[1], await body(req)));
+      if ((m = /^\/api\/audio\/clips\/([\w-]+)$/.exec(path)) && req.method === 'DELETE') return json(res, 200, audio.deleteClip(m[1], (await body(req)).revision));
+      if ((m = /^\/api\/audio\/clips\/([\w-]+)\/regions$/.exec(path)) && req.method === 'PUT') return json(res, 200, audio.replaceRegions(m[1], await body(req)));
+      if ((m = /^\/api\/audio\/clips\/([\w-]+)\/versions$/.exec(path)) && req.method === 'POST') {
+        const revision = Number(req.headers['x-clip-revision']);
+        store.expected(audio.clip(m[1]), revision);
+        return json(res, 201, await receive(req, url, audioTypes, '音轨支持 MP3、WAV、OGG、M4A、FLAC', media => audio.addVersion(m[1], revision, media, url.searchParams.get('note') ?? '')));
+      }
+      if ((m = /^\/api\/audio\/versions\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res, 200, audio.reportDuration(m[1], (await body(req)).duration_ms));
       if ((m = /^\/media\/([\w-]+)$/.exec(path)) && ['GET', 'HEAD'].includes(req.method)) {
         const media = store.media(m[1]);
         if (!media) throw new AppError(404, '素材不存在');
         return await sendFile(req, res, join(mediaDir, media.stored_name), media.mime, true);
       }
-      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'], '/regions.js': ['regions.js', 'text/javascript; charset=utf-8'], '/regions.css': ['regions.css', 'text/css; charset=utf-8'] };
+      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'], '/regions.js': ['regions.js', 'text/javascript; charset=utf-8'], '/regions.css': ['regions.css', 'text/css; charset=utf-8'], '/timeline.js': ['timeline.js', 'text/javascript; charset=utf-8'], '/timeline.css': ['timeline.css', 'text/css; charset=utf-8'], '/voices.js': ['voices.js', 'text/javascript; charset=utf-8'], '/voices.css': ['voices.css', 'text/css; charset=utf-8'], '/agents.js': ['agents.js', 'text/javascript; charset=utf-8'], '/tasks.js': ['tasks.js', 'text/javascript; charset=utf-8'] };
       if (files[path] && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, join(root, 'public', files[path][0]), files[path][1]);
       throw new AppError(404, '找不到这个地址');
     } catch (error) {
@@ -171,7 +248,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
     }
   });
   server.requestTimeout = 30 * 60 * 1000;
-  return { server, store, jobs, runner, library, regions, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
+  return { server, store, jobs, runner, library, regions, audio, voices, tasks, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

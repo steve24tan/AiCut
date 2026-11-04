@@ -154,7 +154,7 @@ test('v2 upgrade preserves ranges and creates a pre-jobs database snapshot', asy
   app = await createApp({ dataDir: join(dir, 'data') });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
   assert.equal(app.store.detail(project.id).shots[0].prompt, shot.prompt);
-  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 6);
   const backup = new DatabaseSync(join(dir, 'data', 'schema-v2-before-v3.sqlite'), { readOnly: true });
   try { assert.equal(backup.prepare('PRAGMA user_version').get().user_version, 2); }
   finally { backup.close(); }

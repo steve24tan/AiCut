@@ -22,7 +22,11 @@ export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
   const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion > 4) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion > 5) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 4) {
+    const backupPath = join(dataDir, 'schema-v4-before-v5.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   if (schemaVersion === 3) {
     const backupPath = join(dataDir, 'schema-v3-before-v4.sqlite');
     if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
@@ -92,6 +96,20 @@ export function openStore(dataDir) {
       CREATE INDEX IF NOT EXISTS shot_refs_shot ON shot_refs(shot_id);
       PRAGMA user_version=4; COMMIT;`);
   }
+  if (schemaVersion < 5) {
+    // Box coordinates are integers in 1/10000 of the displayed frame; times are segment-relative ms, end NULL = segment end.
+    db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS shot_regions (
+        id TEXT PRIMARY KEY,shot_id TEXT NOT NULL REFERENCES shots(id),position INTEGER NOT NULL,
+        x INTEGER NOT NULL,y INTEGER NOT NULL,w INTEGER NOT NULL,h INTEGER NOT NULL,
+        start_ms INTEGER NOT NULL DEFAULT 0,end_ms INTEGER,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS shot_regions_shot ON shot_regions(shot_id,position);
+      PRAGMA user_version=5; COMMIT;`);
+  }
+  function regions(shotId) {
+    return db.prepare('SELECT * FROM shot_regions WHERE shot_id=? ORDER BY position,id').all(shotId);
+  }
   function references(shotId) {
     return db.prepare(`SELECT r.*,a.title,a.tags,a.source_url,a.author,a.license,m.filename,m.mime,m.id AS media_id
       FROM shot_refs r JOIN library_assets a ON a.id=r.asset_id JOIN media m ON m.id=a.media_id WHERE r.shot_id=? ORDER BY r.offset_ms,r.created_at,r.id`)
@@ -121,6 +139,7 @@ export function openStore(dataDir) {
     result.shots = db.prepare('SELECT * FROM shots WHERE project_id=? ORDER BY position,id').all(id).map(row => ({
       ...row,
       references: references(row.id),
+      regions: regions(row.id),
       takes: db.prepare(`SELECT t.*, m.filename, m.mime, m.bytes FROM takes t
         LEFT JOIN media m ON m.id=t.media_id WHERE t.shot_id=? ORDER BY t.number DESC`).all(row.id)
     }));
@@ -204,7 +223,7 @@ export function openStore(dataDir) {
       for (let n = 1; n < boundaries.length; n++) validateRange(boundaries[n - 1], boundaries[n], duration);
       db.prepare('UPDATE shots SET position=position+? WHERE project_id=? AND position>?').run(cuts.length, row.project_id, row.position);
       const name = row.title.slice(0, 190);
-      const refs = references(row.id), targets = [];
+      const refs = references(row.id), boxes = regions(row.id), targets = [];
       for (let n = 0; n < boundaries.length - 1; n++) {
         let target = row;
         if (n > 0) {
@@ -221,6 +240,27 @@ export function openStore(dataDir) {
         const target = targets.find(segment => absolute >= segment.start && absolute < segment.end);
         if (target) db.prepare('UPDATE shot_refs SET shot_id=?,offset_ms=? WHERE id=?').run(target.id, absolute - target.start, ref.id);
       }
+      // A box applies over a time span, so it is copied into every new segment it overlaps and clipped to that segment.
+      db.prepare('DELETE FROM shot_regions WHERE shot_id=?').run(row.id);
+      const insertRegion = db.prepare('INSERT INTO shot_regions VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+      const positions = new Map(targets.map(segment => [segment.id, 0]));
+      for (const box of boxes) {
+        const from = start + box.start_ms, to = box.end_ms == null ? end : start + box.end_ms;
+        let placed = false;
+        for (const segment of targets) {
+          const clippedFrom = Math.max(from, segment.start), clippedTo = Math.min(to, segment.end);
+          if (clippedTo <= clippedFrom) continue;
+          const localEnd = clippedTo === segment.end && (box.end_ms == null || to === segment.end) ? null : clippedTo - segment.start;
+          const position = positions.get(segment.id); positions.set(segment.id, position + 1);
+          insertRegion.run(randomUUID(), segment.id, position, box.x, box.y, box.w, box.h, clippedFrom - segment.start, localEnd, box.note, box.created_at);
+          placed = true;
+        }
+        // Out-of-range boxes stay on the first card unchanged, like references, so the user can review them.
+        if (!placed) {
+          const position = positions.get(row.id); positions.set(row.id, position + 1);
+          insertRegion.run(box.id, row.id, position, box.x, box.y, box.w, box.h, box.start_ms, box.end_ms, box.note, box.created_at);
+        }
+      }
       return detail(row.project_id);
     });
   }
@@ -236,7 +276,7 @@ export function openStore(dataDir) {
     return detail(projectId);
   }
   return {
-    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references,
+    db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references, regions,
     listProjects: () => db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM shots s WHERE s.project_id=p.id) AS shot_count
       FROM projects p ORDER BY created_at,id`).all(),
     media: id => db.prepare('SELECT * FROM media WHERE id=?').get(id),

@@ -8,7 +8,7 @@ Install and sign in to the CLI with a subscription account, then restart the ser
 
 Availability means an executable was found. Each run checks login type. Quota/auth/version errors appear as failures. One task runs at a time with a ten-minute timeout and one-megabyte output limit. No automatic retries. Restart interrupts native work; unclaimed manual tasks remain queued, while claimed manual work becomes interrupted.
 
-The CLI receives project/shot titles, prompt, notes, source revision and adopted-take metadata including time range. Video bytes are not attached. It revises text, not media. Native dispatch starts a new process; it does not inject messages into an existing chat.
+The CLI receives project/shot titles, prompt, notes, source revision, adopted-take metadata including time range, references and frame regions. Each region has `number`, `placement` (for example 右下), `box_percent` {left, top, width, height} as % of the frame from the top-left, segment-relative `start_ms`/`end_ms` (null = segment end) and `note`; the instruction tells the CLI to apply each note only inside its box and keep everything else unchanged. Video bytes and annotated frames are not attached. It revises text, not media. Native dispatch starts a new process; it does not inject messages into an existing chat.
 
 ## Existing agent session
 

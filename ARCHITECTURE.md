@@ -1,6 +1,8 @@
-# 本地工作台架构 · v0.5
+# 本地工作台架构 · v0.6
 
 ## 目标与选择
+
+v0.6 增加画面框选：src/regions.mjs 校验并整组替换某段的框（PUT /api/shots/:id/regions，需 revision），public/regions.js / regions.css 提供框选对话框、卡片叠加层与标注图／mask 导出（浏览器 canvas 生成，服务端不解码媒体）。schema v5 增加 shot_regions（shot 外键、顺序、x/y/w/h 为画面 1/10000 整数、段内 start_ms、end_ms 为空表示到段尾、说明）；v4 升级前生成 schema-v4-before-v5.sqlite。每段最多 20 个框，宽高至少 0.5%。修改框会增加片段 revision，阻止旧 CLI 结果覆盖。任务快照的 regions 字段给出百分比坐标、方位词与时间；runner 指令要求只改框内并写明框外不变。分段时框按时间跨度复制到每个重叠的新段并裁到该段；不与任何新段重叠的框留在第一段原样保留。框只描述修改位置，不改像素，不做合成。
 
 v0.5 提供可选内置 asset-library 扩展：src/library.mjs 管理素材与关联，public/library.js / library.css 提供开关、导入、搜索、试听和拖放；GET /api/extensions 返回能力声明，不加载外部代码。schema v4 增加 library_assets（media 外键、描述、标签、收藏、来源与 revision）及 shot_refs（shot/asset 外键、段内 offset_ms、使用说明）。v3 升级前生成数据库快照。
 

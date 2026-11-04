@@ -38,6 +38,14 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.6 frame region checks — 2026-11-04
+
+`npm.cmd test`: 34/34. New `tests/regions.test.mjs` covers atomic replace and revision bump, rejection of boxes outside the frame / under 0.5% / non-integer / bad time / over 20 boxes / no media / stale revision (saved boxes untouched on failure), regions in the immutable job snapshot and runner instruction, stale-adoption block after editing boxes, segment-bounded times, split copying a box into every overlapping segment with clipped times, backup restore and v4→v5 migration with a pre-upgrade snapshot. Existing migration tests now expect schema 5.
+
+`node scripts/regions-browser-qa.mjs` (installed Chrome headless, synthetic PNG and WebM): real mouse drags drew boxes on a 9:16 still and a paused video frame; a tiny drag was ignored; the new box focused its note; the drawing layer matched the picture exactly; annotated frame and mask exports kept the 540×960 source size with original pixels outside, a red edge on the box and white-inside/black-outside mask; save, clear-all and reload persisted; the card overlay matched the letterboxed picture and dimmed boxes outside their time span; copied request text listed position, percentages and the "outside unchanged" rule (no time text for stills); end-before-start blocked saving; mobile 390px had no horizontal overflow; no runtime exceptions. One bug found and fixed during QA: a closing video dialog fired a pause event into a cleared handler. `node scripts/browser-smoke.mjs` still passes. Screenshots inspected: `test-results/regions-dialog.png`, `regions-video-dialog.png`, `regions-card.png`, `regions-mobile.png`.
+
+Not verified: real production media, whether a real model respects the boxes, and pixel compositing (not implemented).
+
 ## v0.2 segmentation checks — 2026-11-03
 
 Eleven integration tests passed. Added checks cover a 30-second source split into five adjacent ranges using one media file; preserved original take; later-shot ordering; independent notes; recursive splitting; atomic invalid-cut rejection; image and stale-write rejection; trimmed-range backup restore; and a legacy v1 database migration with a pre-upgrade snapshot and intact drafts/media.

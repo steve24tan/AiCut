@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 AiCut is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.5.1` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.6.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -107,6 +107,14 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Maximum file size is 1 GB. Large files, disk-full conditions and production workloads are not benchmarked.
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
+
+## Frame regions (▣ 框选)
+
+Click **▣ 框选** under a shot's picture, pause on the frame you want changed, and drag one or more boxes. Each box gets its own note ("turn the sword gold") and, for video, a segment-relative start/end time (empty end = to the end of the segment). Boxes are shown on the card and follow later splits: a box is copied into every new segment its time span overlaps.
+
+Copied requests and CLI task snapshots list each box as percentages of the frame plus its position (for example "lower right"), and state that everything outside the boxes must stay unchanged. **Download annotated frame** saves the current frame with numbered red boxes; **Download mask** saves a same-size PNG with white boxes on black for tools that support masked edits. Both are generated in the browser.
+
+Boxes describe where to change; they do not edit pixels. A text-only model can still ignore them, so check the result. Pixel-level "outside stays identical" compositing is not implemented yet.
 
 ## Optional Asset Library extension
 

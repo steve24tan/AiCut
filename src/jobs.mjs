@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { AppError } from './store.mjs';
+import { describeRegions } from './regions.mjs';
 
 export const resultSchema = {
   type: 'object', additionalProperties: false,
@@ -31,7 +32,7 @@ export function openJobs(store) {
       if (db.prepare("SELECT id FROM jobs WHERE shot_id=? AND status IN ('queued','running')").get(shotId)) throw new AppError(409, '这个片段已有待处理任务，请等待或取消');
       const project = store.detail(shot.project_id);
       const take = project.shots.find(row => row.id === shotId).takes.find(t => t.id === shot.active_take_id);
-      const snapshot = { project: { id: project.id, title: project.title }, shot: { id: shot.id, title: shot.title, number: shot.position + 1, prompt: shot.prompt, notes: shot.notes, revision: shot.revision }, take: take ?? null, references: store.references(shotId) };
+      const snapshot = { project: { id: project.id, title: project.title }, shot: { id: shot.id, title: shot.title, number: shot.position + 1, prompt: shot.prompt, notes: shot.notes, revision: shot.revision }, take: take ?? null, references: store.references(shotId), regions: describeRegions(store.regions(shotId)) };
       const id = randomUUID(), time = now();
       db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id, shotId, shot.project_id, payload.provider, 'queued', shot.revision, JSON.stringify(snapshot), null, null, time, time);
       return get(id);

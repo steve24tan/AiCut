@@ -10,6 +10,7 @@ import { openStore, AppError } from './src/store.mjs';
 import { openJobs } from './src/jobs.mjs';
 import { createRunner } from './src/runner.mjs';
 import { openLibrary, libraryManifest } from './src/library.mjs';
+import { openRegions } from './src/regions.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
@@ -68,6 +69,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
   const store = openStore(dataDir);
   const jobs = openJobs(store);
   const library = openLibrary(store);
+  const regions = openRegions(store);
   const runner = createRunner(jobs, dataDir, { executor });
   const server = http.createServer(async (req, res) => {
     for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
@@ -90,6 +92,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       if ((m = /^\/api\/shots\/([\w-]+)\/references$/.exec(path)) && req.method === 'POST') return json(res,201,library.attach(m[1],await body(req)));
       if ((m = /^\/api\/shots\/([\w-]+)\/references\/([\w-]+)$/.exec(path)) && req.method === 'DELETE') return json(res,200,library.detach(m[1],m[2],(await body(req)).revision));
       if ((m = /^\/api\/shots\/([\w-]+)\/references\/([\w-]+)$/.exec(path)) && req.method === 'PATCH') return json(res,200,library.editReference(m[1],m[2],await body(req)));
+      if ((m = /^\/api\/shots\/([\w-]+)\/regions$/.exec(path)) && req.method === 'PUT') return json(res, 200, regions.replace(m[1], await body(req)));
       if ((m = /^\/api\/shots\/([\w-]+)\/jobs$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req);
         if (payload.provider !== 'manual' && !runner.providers().find(item => item.id === payload.provider)?.available) throw new AppError(400, '未找到本机 CLI，请安装并登录后重启服务，或选择外部 CLI');
@@ -158,7 +161,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         if (!media) throw new AppError(404, '素材不存在');
         return await sendFile(req, res, join(mediaDir, media.stored_name), media.mime, true);
       }
-      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'] };
+      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'], '/regions.js': ['regions.js', 'text/javascript; charset=utf-8'], '/regions.css': ['regions.css', 'text/css; charset=utf-8'] };
       if (files[path] && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, join(root, 'public', files[path][0]), files[path][1]);
       throw new AppError(404, '找不到这个地址');
     } catch (error) {
@@ -168,7 +171,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
     }
   });
   server.requestTimeout = 30 * 60 * 1000;
-  return { server, store, jobs, runner, library, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
+  return { server, store, jobs, runner, library, regions, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

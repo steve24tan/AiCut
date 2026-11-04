@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/segments.css">
   <link rel="stylesheet" href="/jobs.css">
   <link rel="stylesheet" href="/library.css">
+  <link rel="stylesheet" href="/regions.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -71,11 +72,21 @@
     <p id="segment-summary" role="status"></p>
     <div class="dialog-actions"><button data-close>取消</button><button id="apply-segments" class="primary" disabled>保存分段</button></div>
   </dialog>
+  <dialog id="region-dialog">
+    <div class="dialog-head"><h2 id="region-heading">画面框选</h2><button data-close class="icon" aria-label="关闭">×</button></div>
+    <p class="region-intro">暂停在要改的画面，按住鼠标拖出一个框，每个框写一句要改什么。复制请求和 CLI 任务会写明「只改框内，框外保持不变」。</p>
+    <div class="region-body">
+      <div><div class="region-stage"><div id="region-frame" class="region-frame"><div id="region-layer" aria-label="在画面上拖动以添加框"></div></div></div>
+      <div id="region-player" class="region-player"><button id="region-play" aria-label="播放或暂停">▶</button><input id="region-seek" type="range" step="1" aria-label="画面位置"><span id="region-time"></span></div></div>
+      <div><p id="region-summary" role="status"></p><div id="region-list"></div></div>
+    </div>
+    <div class="dialog-actions region-dialog-actions"><button id="region-export-frame" title="当前画面加上红框编号，原尺寸 PNG">下载标注图</button><button id="region-export-mask" title="框内白、框外黑，原尺寸 PNG，给支持局部重绘的工具">下载 mask</button><span class="spacer"></span><button data-close>取消</button><button id="region-save" class="primary">保存框选</button></div>
+  </dialog>
   <template id="shot-template">
     <article class="shot-card">
       <div class="card-head"><span class="shot-number"></span><input class="shot-title" data-field="title" aria-label="片段名称" maxlength="200"><div class="move-actions"><button class="icon move-up" title="前移" aria-label="前移">←</button><button class="icon move-down" title="后移" aria-label="后移">→</button></div></div>
       <div class="media-stage"><div class="media-placeholder"><span>＋</span><p>放入这一段的画面</p><small>导入视频或图片，也可以先写 Prompt</small></div></div>
-      <div class="take-bar"><span class="take-label">采用版本</span><select class="take-select" aria-label="选择采用版本"></select><button class="text-button inspect-take">查看快照</button></div>
+      <div class="take-bar"><span class="take-label">采用版本</span><select class="take-select" aria-label="选择采用版本"></select><button class="text-button inspect-take">查看快照</button><button class="text-button edit-regions">▣ 框选</button></div>
       <div class="range-bar" hidden><span class="range-label"></span><label><input class="loop-segment" type="checkbox" checked> 单段循环</label><button class="text-button trim-range">调整范围</button><button class="text-button split-video">✂ 分段</button></div>
       <div class="card-body"><label class="field-label">PROMPT <span>下一版草稿</span><textarea data-field="prompt" rows="4" maxlength="50000" placeholder="描述这一段的画面、动作或内容…"></textarea></label><label class="field-label note-label">修改要求 <span>这一段，哪里需要调整？</span><textarea data-field="notes" rows="3" maxlength="50000" placeholder="例如：转头慢一点，最后停顿一秒，人物脸型保持一致。"></textarea></label></div>
       <div class="card-footer"><select class="shot-status" data-field="status" aria-label="片段状态"><option value="todo">○ 待生成</option><option value="revise">◐ 待微调</option><option value="review">◉ 待检查</option><option value="approved">● 已确认</option></select><span class="card-save"></span></div>

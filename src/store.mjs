@@ -7,6 +7,7 @@ export class AppError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 export const statuses = ['todo', 'revise', 'review', 'approved'];
+export const motionEffects = ['tremble', 'shake', 'breathe', 'sway', 'float', 'blink'];
 const now = () => new Date().toISOString();
 function string(value, field, max = 50000) {
   if (typeof value !== 'string' || value.length > max) throw new AppError(400, `${field} 格式不正确或过长`);
@@ -22,7 +23,11 @@ export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
   const schemaVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion > 6) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion > 7) { db.close(); throw new Error('数据库由更新版本创建，请升级应用。'); }
+  if (schemaVersion === 6) {
+    const backupPath = join(dataDir, 'schema-v6-before-v7.sqlite');
+    if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
+  }
   if (schemaVersion === 5) {
     const backupPath = join(dataDir, 'schema-v5-before-v6.sqlite');
     if (!existsSync(backupPath)) db.prepare('VACUUM INTO ?').run(backupPath);
@@ -156,6 +161,12 @@ export function openStore(dataDir) {
       ${db.prepare("SELECT 1 FROM pragma_table_info('jobs') WHERE name='target'").get() ? '' : 'ALTER TABLE jobs ADD COLUMN target TEXT;'}
       PRAGMA user_version=6; COMMIT;`);
   }
+  if (schemaVersion < 7) {
+    // Micro-motion rig for a still (JSON, '' = none); see validateMotion.
+    db.exec(`BEGIN IMMEDIATE;
+      ${db.prepare("SELECT 1 FROM pragma_table_info('shots') WHERE name='motion'").get() ? '' : "ALTER TABLE shots ADD COLUMN motion TEXT NOT NULL DEFAULT '';"}
+      PRAGMA user_version=7; COMMIT;`);
+  }
   function regions(shotId) {
     return db.prepare('SELECT * FROM shot_regions WHERE shot_id=? ORDER BY position,id').all(shotId);
   }
@@ -165,6 +176,27 @@ export function openStore(dataDir) {
   }
   function characters(projectId) {
     return db.prepare('SELECT * FROM characters WHERE project_id=? ORDER BY created_at,id').all(projectId);
+  }
+  // Micro-motion rig: which still it animates, loop length, and up to 8 feathered boxes with an effect each.
+  // Box/pivot coordinates are 1/10000 of the frame, like frame regions.
+  function validateMotion(row, value) {
+    if (value === '') return '';
+    let rig;
+    try { rig = JSON.parse(string(value, '微动设置', 20000)); } catch (error) { if (error instanceof AppError) throw error; throw new AppError(400, '微动设置不是有效的 JSON'); }
+    const bad = message => { throw new AppError(400, `微动设置无效：${message}`); };
+    const inRange = (v, min, max) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+    const source = db.prepare('SELECT t.id,m.mime FROM takes t JOIN media m ON m.id=t.media_id WHERE t.id=? AND t.shot_id=?').get(rig?.source_take_id, row.id);
+    if (!source || !source.mime.startsWith('image/')) bad('来源必须是这一段的图片版本');
+    if (!Number.isSafeInteger(rig.duration_ms) || rig.duration_ms < 1000 || rig.duration_ms > 10000) bad('循环长度应为 1–10 秒');
+    if (!Array.isArray(rig.regions) || rig.regions.length > 8) bad('最多 8 个动作区域');
+    const regions = rig.regions.map(r => {
+      if (!r || !motionEffects.includes(r.effect)) bad('效果类型不正确');
+      const { x, y, w, h } = r;
+      if (![x, y, w, h].every(Number.isSafeInteger) || x < 0 || y < 0 || w < 50 || h < 50 || x + w > 10000 || y + h > 10000) bad('区域需在画面内，宽高至少 0.5%');
+      if (!inRange(r.strength, 1, 10) || !inRange(r.speed, 0.25, 4) || !inRange(r.feather, 0, 50) || !inRange(r.pivot_x, 0, 10000) || !inRange(r.pivot_y, 0, 10000)) bad('强度 1–10、速度 0.25–4、羽化 0–50、支点需在画面内');
+      return { x, y, w, h, effect: r.effect, strength: r.strength, speed: r.speed, feather: r.feather, pivot_x: r.pivot_x, pivot_y: r.pivot_y };
+    });
+    return JSON.stringify({ source_take_id: rig.source_take_id, duration_ms: rig.duration_ms, regions });
   }
   // Dialogue is saved as a complete ordered list with the shot's other draft fields.
   function replaceLines(row, value) {
@@ -235,19 +267,20 @@ export function openStore(dataDir) {
   }
   function applyShotPatch(id, patch) {
     const row = shot(id); expected(row, patch.revision);
-    const fields = ['title', 'prompt', 'notes', 'status', 'active_take_id', 'lines'];
+    const fields = ['title', 'prompt', 'notes', 'status', 'active_take_id', 'lines', 'motion'];
     if (Object.keys(patch).some(key => ![...fields, 'revision'].includes(key))) throw new AppError(400, '不支持的修改字段');
     if (patch.lines !== undefined) replaceLines(row, patch.lines);
     const { lines: _lines, ...rest } = patch;
     const next = { ...row, ...rest };
+    if (patch.motion !== undefined) next.motion = validateMotion(row, patch.motion);
     next.title = title(next.title);
     string(next.prompt, 'Prompt'); string(next.notes, '备注');
     if (!statuses.includes(next.status)) throw new AppError(400, '状态不正确');
     if (next.active_take_id !== null && !db.prepare('SELECT id FROM takes WHERE id=? AND shot_id=?').get(next.active_take_id, id)) {
       throw new AppError(400, '采用版不属于这个片段');
     }
-    db.prepare(`UPDATE shots SET title=?,prompt=?,notes=?,status=?,active_take_id=?,revision=revision+1,updated_at=? WHERE id=?`)
-      .run(next.title, next.prompt, next.notes, next.status, next.active_take_id, now(), id);
+    db.prepare(`UPDATE shots SET title=?,prompt=?,notes=?,status=?,active_take_id=?,motion=?,revision=revision+1,updated_at=? WHERE id=?`)
+      .run(next.title, next.prompt, next.notes, next.status, next.active_take_id, next.motion, now(), id);
     return shot(id);
   }
   function addTake(id, revision, media = null) {

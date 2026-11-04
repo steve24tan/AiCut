@@ -101,6 +101,16 @@
     </div>
     <div class="dialog-actions region-dialog-actions"><button id="region-export-frame" title="当前画面加上红框编号，原尺寸 PNG">下载标注图</button><button id="region-export-mask" title="框内白、框外黑，原尺寸 PNG，给支持局部重绘的工具">下载 mask</button><span class="spacer"></span><button data-close>取消</button><button id="region-save" class="primary">保存框选</button></div>
   </dialog>
+  <dialog id="motion-dialog">
+    <div class="dialog-head"><h2 id="motion-heading">微动</h2><button data-close class="icon" aria-label="关闭">×</button></div>
+    <p class="region-intro">在静图上框出要动的地方，选效果、调强度和速度。只有框里会动，框外保持原图。导出为一段无缝循环视频，作为这一段的新版本。</p>
+    <div class="region-body">
+      <div><div class="region-stage"><div class="region-frame motion-frame"><canvas id="motion-canvas" class="region-media"></canvas><div id="motion-layer" aria-label="在画面上拖动以添加动作区域"></div></div></div>
+      <div class="region-player"><button id="motion-play" aria-label="播放或暂停预览">❚❚</button><label class="motion-duration">循环长度（秒）<input id="motion-duration" type="number" min="1" max="10" step="0.5" value="4"></label></div></div>
+      <div><p id="motion-summary" role="status"></p><div id="motion-list"></div></div>
+    </div>
+    <div class="dialog-actions"><button data-close>取消</button><button id="motion-save">保存设置</button><button id="motion-export" class="primary">导出为新版本</button></div>
+  </dialog>
   <dialog id="music-dialog"><form id="music-form">
     <div class="dialog-head"><h2>生成 BGM</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div>
     <p>描述想要的音乐，交给 agent 生成（例如用 ElevenLabs 音乐），生成后会作为新片段放上所选 BGM 音轨。</p>
@@ -126,7 +136,7 @@
     <article class="shot-card">
       <div class="card-head"><span class="shot-number"></span><input class="shot-title" data-field="title" aria-label="片段名称" maxlength="200"><div class="move-actions"><button class="icon move-up" title="前移" aria-label="前移">←</button><button class="icon move-down" title="后移" aria-label="后移">→</button></div></div>
       <div class="media-stage"><div class="media-placeholder"><span>＋</span><p>放入这一段的画面</p><small>导入视频或图片，也可以先写 Prompt</small></div></div>
-      <div class="take-bar"><span class="take-label">采用版本</span><select class="take-select" aria-label="选择采用版本"></select><button class="text-button inspect-take">查看快照</button><button class="text-button edit-regions">▣ 框选</button></div>
+      <div class="take-bar"><span class="take-label">采用版本</span><select class="take-select" aria-label="选择采用版本"></select><button class="text-button inspect-take">查看快照</button><button class="text-button edit-regions">▣ 框选</button><button class="text-button edit-motion">✦ 微动</button></div>
       <div class="range-bar" hidden><span class="range-label"></span><label><input class="loop-segment" type="checkbox" checked> 单段循环</label><button class="text-button trim-range">调整范围</button><button class="text-button split-video">✂ 分段</button></div>
       <div class="card-body"><label class="field-label">PROMPT <span>下一版草稿</span><textarea data-field="prompt" rows="4" maxlength="50000" placeholder="描述这一段的画面、动作或内容…"></textarea></label><label class="field-label note-label">修改要求 <span>这一段，哪里需要调整？</span><textarea data-field="notes" rows="3" maxlength="50000" placeholder="例如：转头慢一点，最后停顿一秒，人物脸型保持一致。"></textarea></label></div>
       <div class="card-footer"><select class="shot-status" data-field="status" aria-label="片段状态"><option value="todo">○ 待生成</option><option value="revise">◐ 待微调</option><option value="review">◉ 待检查</option><option value="approved">● 已确认</option></select><span class="card-save"></span></div>

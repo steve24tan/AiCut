@@ -180,7 +180,7 @@ test('v1 database migrates without losing existing media or drafts and creates a
   const detail = (await call(`/api/projects/${project.id}`)).data;
   assert.equal(detail.shots[0].prompt, 'legacy draft');
   assert.equal(detail.shots[0].takes[0].start_ms, null);
-  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 6);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 7);
   const snapshot = new DatabaseSync(join(dir, 'data', 'schema-v1-before-v2.sqlite'), { readOnly: true });
   try { assert.equal(snapshot.prepare('PRAGMA user_version').get().user_version, 1); assert.equal(snapshot.prepare('SELECT prompt FROM shots').get().prompt, 'legacy draft'); }
   finally { snapshot.close(); }

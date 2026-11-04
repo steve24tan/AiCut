@@ -38,6 +38,14 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.8 micro-motion — 2026-11-04
+
+`npm.cmd test`: 47/47. `motion.test.mjs` covers rig normalization (unknown fields dropped), rejection of non-image or foreign source takes, loop length, effect, box, strength/speed/feather/pivot ranges and more than 8 regions (no change on failure), stale revision, clearing, and v6→v7 migration with a snapshot.
+
+`node scripts/motion-browser-qa.mjs` (headless Chrome, SwiftShader WebGL, synthetic 540×960 still): exact-pixel readback shows 0 changed pixels outside the box versus the source, the boxed area moves between phases, and loop start/end frames match; real mouse box, effect switch to sway, pivot picked by click, save, export, reopen editing the still, mobile width, no runtime exceptions. Export: first real-time MediaRecorder attempts produced 0.28 s / 2.95 s clips for a 2 s loop (recording starts ~1.2 s late and software WebGL renders ~10 fps), so export was changed to offline WebCodecs H.264 + a hand-written MP4 muxer; ffmpeg decodes the result as 60 frames, 2.00 s, 540×960 @ 30 fps with no errors. All earlier browser QA and the 剪映 export QA still pass.
+
+Not verified: real GA stills and GPU browsers on the GA PC, how the motion looks on chibi art, importing the exported MP4 into 剪映 (standard H.264 Baseline MP4, expected to work).
+
 ## v0.7 audio timeline, dialogue, agent tasks, 剪映 export — 2026-11-04
 
 `npm.cmd test`: 45/45. New suites: `audio.test.mjs` (uploads and library-asset clips, rejected uploads leave no files, clip edit validation, cross-project moves blocked, versions for A/B keep the trim window, stale revisions, duration reported once, audio regions, cascade delete keeps media, timeline manifest, backup, v5→v6 migration snapshot), `voices.test.mjs` (characters, dialogue saved atomically with the shot revision, voice changes block stale adoption, in-use characters cannot be deleted), `tasks.test.mjs` (real herdr adapter against a stand-in CLI: discovery, stopped server, busy/blocked agents refused and recorded as failed, one-line pointer; full agent round trip through real `cli.mjs` subprocesses: claim → `audio version` → complete; voice/music/mix validation and `audio add`; prompt jobs via herdr).

@@ -1,6 +1,8 @@
-# 本地工作台架构 · v0.7
+# 本地工作台架构 · v0.8
 
 ## 目标与选择
+
+v0.8 增加静图微动。schema v7（v6 升级前生成 schema-v6-before-v7.sqlite）给 shots 加 motion 栏：JSON 记录来源图片版本、循环长度（1–10 秒）和最多 8 个区域（画面 1/10000 坐标、效果、强度、速度、羽化、支点），随片段 revision 保存，服务端校验并正规化。public/motion.js 用 WebGL 片元着色器做反向映射：每个像素按各区域羽化权重累加位移，框外权重为 0，取样点落在原像素中心，所以框外像素与原图一致；效果以整数圈数周期运动，循环首尾相同。导出用 WebCodecs VideoEncoder（H.264 Baseline，无 B 帧）离线逐帧编码，public/mp4.js 手写单轨 MP4（ftyp/moov/mdat，stts 固定帧长、stss 关键帧、单 chunk），与机器速度无关；不支持时退回 MediaRecorder 实时录制。导出结果作为新 take 上传，原图保留为微动来源。
 
 v0.7 增加剪映式时间线与音频协作。schema v6（v5 升级前生成 schema-v5-before-v6.sqlite）：audio_tracks（类型 bgm/voice/sfx/other、静音、dB）、audio_clips（时间线 offset_ms、源文件 in_ms/out_ms、整段修改要求、采用版本）、audio_versions（同一片段多个媒体版本，供 A/B；时长由浏览器解码后回报一次）、audio_regions（源文件时间的框选与说明）、characters（角色 → provider/voice_id/声音描述）、shot_lines（每段台词，随片段草稿一起按 revision 保存）、tasks（音频任务快照与结果），jobs 增加 target 栏。src/audio.mjs、src/voices.mjs、src/tasks.mjs、src/herdr.mjs、src/export.mjs 分别负责；server.mjs 的上传抽成 receive()，镜头导入、素材库与音频共用。
 

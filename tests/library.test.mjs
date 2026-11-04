@@ -60,7 +60,7 @@ test('backup and schema upgrade preserve asset references and originals',async()
   try{const ref=restored.store.detail(project.id).shots[0].references[0];const media=restored.store.media(ref.media_id);assert.equal((await readFile(join(dir,'backup','media',media.stored_name))).toString(),'synthetic asset bytes');}finally{await restored.runner.close();restored.store.close();}
   await app.close();const legacy=new DatabaseSync(join(dir,'data','workbench.sqlite'));legacy.exec('DROP TABLE shot_refs; DROP TABLE library_assets; PRAGMA user_version=3;');legacy.close();
   app=await createApp({dataDir:join(dir,'data')});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${app.server.address().port}`;
-  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version,6);assert.equal(app.store.detail(project.id).shots.length,1);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version,7);assert.equal(app.store.detail(project.id).shots.length,1);
   const snapshot=new DatabaseSync(join(dir,'data','schema-v3-before-v4.sqlite'),{readOnly:true});try{assert.equal(snapshot.prepare('PRAGMA user_version').get().user_version,3);}finally{snapshot.close();}
 });
 

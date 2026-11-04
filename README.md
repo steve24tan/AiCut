@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 AiCut is a small local workspace for creators who generate content in other tools. Organize clips or text into shot cards, write a prompt and revision notes under each one, copy the complete request into your preferred tool, then import the next take.
 
-The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.7.0` implementation; production workflows still need testing.
+The core workspace needs no AI API, account, cloud upload or npm dependencies. Optional CLI tasks use your installed, subscription-signed-in Claude Code or Codex CLI and send that shot's text to its provider. The current interface is in Simplified Chinese. This is an early `v0.8.0` implementation; production workflows still need testing.
 
 ![Shot cards with prompts, revision notes and take selection. All content is synthetic test data.](docs/images/workbench.png)
 
@@ -107,6 +107,10 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Maximum file size is 1 GB. Large files, disk-full conditions and production workloads are not benchmarked.
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
+
+## Micro-motion for stills (✦ 微动, v0.8)
+
+Bring a still to life without prompts or a model. Click **✦ 微动** on an image shot, drag a box around a hand, eyes, hair or body, and pick an effect: tremble, shake, breathe, sway (around a pivot you click, e.g. the wrist), float or blink. Adjust strength, speed and edge feather with live preview; up to 8 boxes. Only the boxes move: the WebGL warp has zero weight outside them, so outside pixels are the original. Every effect completes whole cycles per loop, and **导出为新版本** encodes the loop frame by frame (WebCodecs H.264, 30 fps, exact length) into an MP4 that becomes the shot's new take; the still stays as the rig's source so you can reopen and adjust. Browsers without WebCodecs H.264 fall back to real-time recording.
 
 ## Timeline, audio and agents (v0.7)
 

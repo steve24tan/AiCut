@@ -117,7 +117,7 @@ test('deleting tracks and clips keeps media; backup and v5 upgrade keep audio', 
   const legacy = new DatabaseSync(join(dir, 'data', 'workbench.sqlite'));
   legacy.exec('DROP TABLE audio_regions; DROP TABLE audio_versions; DROP TABLE audio_clips; DROP TABLE audio_tracks; PRAGMA user_version=5;'); legacy.close();
   app = await createApp({ dataDir: join(dir, 'data') }); await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
-  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 6);
+  assert.equal(app.store.db.prepare('PRAGMA user_version').get().user_version, 7);
   assert.deepEqual(app.audio.detail(project.id).tracks, []);
   const snapshot = new DatabaseSync(join(dir, 'data', 'schema-v5-before-v6.sqlite'), { readOnly: true });
   try { assert.equal(snapshot.prepare('PRAGMA user_version').get().user_version, 5); } finally { snapshot.close(); }

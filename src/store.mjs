@@ -7,7 +7,9 @@ export class AppError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 export const statuses = ['todo', 'revise', 'review', 'approved'];
-export const motionEffects = ['tremble', 'shake', 'breathe', 'sway', 'float', 'blink'];
+export const motionEffects = ['tremble', 'shake', 'breathe', 'sway', 'float', 'blink', 'flow'];
+export const cameraMoves = ['none', 'push', 'pan', 'tilt', 'orbit'];
+export const defaultCamera = { move: 'none', strength: 4, cycles: 1, focus: 50 };
 const now = () => new Date().toISOString();
 function string(value, field, max = 50000) {
   if (typeof value !== 'string' || value.length > max) throw new AppError(400, `${field} 格式不正确或过长`);
@@ -178,7 +180,8 @@ export function openStore(dataDir) {
     return db.prepare('SELECT * FROM characters WHERE project_id=? ORDER BY created_at,id').all(projectId);
   }
   // Micro-motion rig: which still it animates, loop length, and up to 8 feathered boxes with an effect each.
-  // Box/pivot coordinates are 1/10000 of the frame, like frame regions.
+  // Box/pivot coordinates are 1/10000 of the frame, like frame regions. Optional 2.5D parallax: a depth map
+  // (media row, white = near) and a camera move that completes whole cycles per loop; moving needs a depth map.
   function validateMotion(row, value) {
     if (value === '') return '';
     let rig;
@@ -196,8 +199,23 @@ export function openStore(dataDir) {
       if (!inRange(r.strength, 1, 10) || !inRange(r.speed, 0.25, 4) || !inRange(r.feather, 0, 50) || !inRange(r.pivot_x, 0, 10000) || !inRange(r.pivot_y, 0, 10000)) bad('强度 1–10、速度 0.25–4、羽化 0–50、支点需在画面内');
       return { x, y, w, h, effect: r.effect, strength: r.strength, speed: r.speed, feather: r.feather, pivot_x: r.pivot_x, pivot_y: r.pivot_y };
     });
-    return JSON.stringify({ source_take_id: rig.source_take_id, duration_ms: rig.duration_ms, regions });
+    const depth = rig.depth_media_id ?? null;
+    if (depth !== null && !(typeof depth === 'string' && media(depth)?.mime.startsWith('image/'))) bad('深度图必须是已上传的图片');
+    const c = { ...defaultCamera, ...(rig.camera ?? {}) };
+    if (!cameraMoves.includes(c.move)) bad('镜头运动类型不正确');
+    if (!inRange(c.strength, 1, 10) || !Number.isSafeInteger(c.cycles) || c.cycles < 1 || c.cycles > 4 || !inRange(c.focus, 0, 100)) bad('镜头幅度 1–10、圈数 1–4、焦点 0–100');
+    if (c.move !== 'none' && depth === null) bad('镜头运动需要深度图');
+    const camera = { move: c.move, strength: c.strength, cycles: c.cycles, focus: c.focus };
+    return JSON.stringify({ source_take_id: rig.source_take_id, duration_ms: rig.duration_ms, regions, depth_media_id: depth, camera });
   }
+  // Depth maps are plain media rows: append-only, referenced from a rig, never shown as a take.
+  function addMedia(id, value) {
+    shot(id);
+    if (!value.mime.startsWith('image/')) throw new AppError(415, '深度图支持 PNG、JPG、WebP');
+    db.prepare('INSERT INTO media VALUES(?,?,?,?,?,?)').run(value.id, value.filename, value.stored_name, value.mime, value.bytes, value.sha256);
+    return { media_id: value.id, filename: value.filename };
+  }
+  const media = id => db.prepare('SELECT * FROM media WHERE id=?').get(id);
   // Dialogue is saved as a complete ordered list with the shot's other draft fields.
   function replaceLines(row, value) {
     if (!Array.isArray(value) || value.length > 50) throw new AppError(400, '每段最多 50 句台词');
@@ -390,7 +408,7 @@ export function openStore(dataDir) {
     db, shot, project, detail, expected, createProject, addShot, updateShot, addTake, reorder, split, trim, references, regions, lines, characters,
     listProjects: () => db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM shots s WHERE s.project_id=p.id) AS shot_count
       FROM projects p ORDER BY created_at,id`).all(),
-    media: id => db.prepare('SELECT * FROM media WHERE id=?').get(id),
+    media, addMedia,
     close: () => db.close()
   };
 }

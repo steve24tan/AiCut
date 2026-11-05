@@ -108,6 +108,10 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
 
+## 2.5D parallax and flow (v0.9)
+
+The micro-motion dialog gains a camera row: upload a depth map with the still's aspect ratio (white = near, e.g. from Depth Anything) and pick push, pan, tilt or orbit. Each pixel shifts by its depth minus the focus depth, so the focus layer stays put, nearer layers follow the camera and farther ones move against it; a slight zoom hides the shifted edges. The camera completes whole cycles per loop, so exports still loop seamlessly, and a camera-only rig needs no boxes. A new region effect, flow, sends ripples toward the pivot for fire, water, smoke or flags. Depth maps are stored as media, not takes; agents attach one with `node cli.mjs motion depth SHOT_ID depth.png` (a still camera becomes a slow push). AiCut does not estimate depth itself.
+
 ## Micro-motion for stills (✦ 微动, v0.8)
 
 Bring a still to life without prompts or a model. Click **✦ 微动** on an image shot, drag a box around a hand, eyes, hair or body, and pick an effect: tremble, shake, breathe, sway (around a pivot you click, e.g. the wrist), float or blink. Adjust strength, speed and edge feather with live preview; up to 8 boxes. Only the boxes move: the WebGL warp has zero weight outside them, so outside pixels are the original. Every effect completes whole cycles per loop, and **导出为新版本** encodes the loop frame by frame (WebCodecs H.264, 30 fps, exact length) into an MP4 that becomes the shot's new take; the still stays as the rig's source so you can reopen and adjust. Browsers without WebCodecs H.264 fall back to real-time recording.

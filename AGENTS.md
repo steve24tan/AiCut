@@ -20,7 +20,7 @@ AiCut types a one-line pointer such as `[AiCut] 新任务 <id>（处理音频：
 1. `node cli.mjs tasks read TASK_ID` (audio) or `node cli.mjs jobs read JOB_ID` (prompt rewrite). The snapshot is the full request: notes, time-range boxes (`regions`, source-file ms), local file paths of every version, dialogue with each character's `voice_id`, and a `deliver` command line.
 2. `tasks claim TASK_ID` before working, so the user sees it is in progress.
 3. Do the work with your own tools. Local processing (stem split, gain changes, crossfades with ffmpeg) is preferred when the request can be done without regenerating; online generation (e.g. ElevenLabs TTS/music via its MCP server) costs the user's credits, so use it only for voice and music generation tasks or when the instruction asks for it. Keep everything outside the boxed time ranges unchanged.
-4. Return audio only through `deliver`: `node cli.mjs audio version CLIP_ID FILE --note "…"` adds a new version (the old one stays for A/B), `node cli.mjs audio add TRACK_ID FILE --offset SECONDS --title "…"` adds a clip. Never overwrite files under `data/`.
+4. Return audio only through `deliver`: `node cli.mjs audio version CLIP_ID FILE --note "…"` adds a new version (the old one stays for A/B), `node cli.mjs audio add TRACK_ID FILE --offset SECONDS --title "…"` adds a clip. Never overwrite files under `data/`. A depth map for 2.5D parallax goes in with `node cli.mjs motion depth SHOT_ID depth.png` (white = near, same aspect as the still).
 5. `tasks complete TASK_ID --file result.json` with `{"summary":"…","outputs":[{"clip_id":"…","version_id":"…"}]}`, or `tasks fail TASK_ID --message "reason"` when it cannot be done. Do not fake success.
 
 ## Development

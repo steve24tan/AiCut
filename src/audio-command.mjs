@@ -18,7 +18,7 @@ async function file(input) {
   if (!audioTypes[extname(path).toLowerCase()]) throw new Error('Audio must be MP3, WAV, OGG, M4A or FLAC');
   return { path, info };
 }
-async function upload(base, route, { path, info }, headers = {}) {
+export async function upload(base, route, { path, info }, headers = {}) {
   const response = await fetch(new URL(route, base), {
     method: 'POST', headers: { 'X-Workbench': '1', 'Content-Type': 'application/octet-stream', 'Content-Length': String(info.size), ...headers }, body: createReadStream(path), duplex: 'half'
   });

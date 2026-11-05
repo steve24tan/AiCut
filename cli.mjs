@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { importFile, splitExisting, options } from './src/import-command.mjs';
 import { flags, addClip, addVersion } from './src/audio-command.mjs';
+import { attachDepth } from './src/motion-command.mjs';
 
 const args = process.argv.slice(2), base = process.env.SHOT_WORKBENCH_URL || 'http://127.0.0.1:4317';
 const url = new URL(base);
@@ -34,6 +35,7 @@ try {
     result = await call(`/api/projects/${encodeURIComponent(id)}/audio/tracks`, 'POST', { title: option, kind: opts['--kind'] ?? 'bgm' });
   } else if (group === 'audio' && command === 'add' && id && option) result = await addClip({ trackId: id, input: option, opts: flags(args.slice(4), ['--offset', '--title', '--note']), base: url });
   else if (group === 'audio' && command === 'version' && id && option) result = await addVersion({ clipId: id, input: option, opts: flags(args.slice(4), ['--note']), call, base: url });
+  else if (group === 'motion' && command === 'depth' && id && option) result = await attachDepth({ shotId: id, input: option, call, base: url });
   else if (group === 'audio' && command && !id) result = await call(`/api/projects/${encodeURIComponent(command)}/audio`);
   else {
     console.log(`Usage (local server must be running):
@@ -59,6 +61,9 @@ Audio timeline:
   node cli.mjs audio track PROJECT_ID NAME [--kind bgm|voice|sfx|other]
   node cli.mjs audio add TRACK_ID FILE [--offset SECONDS] [--title NAME] [--note TEXT]
   node cli.mjs audio version CLIP_ID FILE [--note TEXT]
+
+Micro-motion (2.5D parallax):
+  node cli.mjs motion depth SHOT_ID depth.png   attach a depth map (white = near, same aspect as the still)
 
 Results never overwrite silently: new audio becomes a new version or clip that the user can A/B in the UI.`);
     process.exitCode = args.length ? 1 : 0;

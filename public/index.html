@@ -103,11 +103,11 @@
   </dialog>
   <dialog id="motion-dialog">
     <div class="dialog-head"><h2 id="motion-heading">微动</h2><button data-close class="icon" aria-label="关闭">×</button></div>
-    <p class="region-intro">在静图上框出要动的地方，选效果、调强度和速度。只有框里会动，框外保持原图。导出为一段无缝循环视频，作为这一段的新版本。</p>
+    <p class="region-intro">在静图上框出要动的地方，选效果、调强度和速度。只有框里会动，框外保持原图；加一张深度图还能让整张做 2.5D 视差镜头。导出为一段无缝循环视频，作为这一段的新版本。</p>
     <div class="region-body">
       <div><div class="region-stage"><div class="region-frame motion-frame"><canvas id="motion-canvas" class="region-media"></canvas><div id="motion-layer" aria-label="在画面上拖动以添加动作区域"></div></div></div>
       <div class="region-player"><button id="motion-play" aria-label="播放或暂停预览">❚❚</button><label class="motion-duration">循环长度（秒）<input id="motion-duration" type="number" min="1" max="10" step="0.5" value="4"></label></div></div>
-      <div><p id="motion-summary" role="status"></p><div id="motion-list"></div></div>
+      <div><p id="motion-summary" role="status"></p><div id="motion-camera"></div><input id="motion-depth-input" type="file" accept=".png,.jpg,.jpeg,.webp" hidden><div id="motion-list"></div></div>
     </div>
     <div class="dialog-actions"><button data-close>取消</button><button id="motion-save">保存设置</button><button id="motion-export" class="primary">导出为新版本</button></div>
   </dialog>

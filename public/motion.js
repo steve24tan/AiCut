@@ -1,7 +1,9 @@
 import { muxMp4 } from './mp4.js';
-// Micro-motion for stills: feathered boxes that tremble, shake, breathe, sway, float or blink.
+// Micro-motion for stills: feathered boxes that tremble, shake, breathe, sway, float, blink or flow.
 // A WebGL shader warps only inside the boxes (weight 0 outside, so outside pixels are the original),
 // and every effect completes whole cycles per loop so the exported clip loops seamlessly.
+// Optional 2.5D parallax: a depth map (white = near) shifts each pixel by its distance from the focus depth
+// as a camera pushes, pans, tilts or orbits; a slight zoom keeps the shifted edges inside the frame.
 const $ = selector => document.querySelector(selector);
 const SCALE = 10000, MIN = 50, MAX_REGIONS = 8;
 export const effects = {
@@ -10,22 +12,35 @@ export const effects = {
   breathe: { label: '呼吸', hz: 0.35, hint: '待机起伏（支点在底部）' },
   sway: { label: '摆动', hz: 0.6, hint: '头发、披风、手臂（支点=固定端）' },
   float: { label: '漂浮', hz: 0.5, hint: '道具、特效上下飘' },
-  blink: { label: '眨眼', hz: 0.3, hint: '框住眼睛，定时闭合' }
+  blink: { label: '眨眼', hz: 0.3, hint: '框住眼睛，定时闭合' },
+  flow: { label: '流动', hz: 0.5, hint: '火焰、水、烟、旗帜（支点=流向）' }
 };
-const effectIds = Object.keys(effects);
+export const cameraMoves = { none: '不动', push: '推近', pan: '左右摇', tilt: '上下摇', orbit: '绕圈' };
+const effectIds = Object.keys(effects), moveIds = Object.keys(cameraMoves);
+const defaultCamera = { move: 'none', strength: 4, cycles: 1, focus: 50 };
 let ctx, draft = null, renderer = null, image = null, frame = 0, playing = true, started = 0, drawing = null, pivotFor = null, busy = false;
 
 export function defaultPivot(effect, box) {
   const cx = Math.round(box.x + box.w / 2);
   if (effect === 'breathe') return { pivot_x: cx, pivot_y: box.y + box.h };
-  if (effect === 'sway') return { pivot_x: cx, pivot_y: box.y };
+  if (effect === 'sway' || effect === 'flow') return { pivot_x: cx, pivot_y: box.y };
   return { pivot_x: cx, pivot_y: Math.round(box.y + box.h / 2) };
 }
 const VERTEX = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = `precision highp float;
-uniform sampler2D u_image; uniform vec2 u_size; uniform float u_time; uniform int u_count;
+uniform sampler2D u_image; uniform sampler2D u_depth; uniform vec2 u_size; uniform float u_time; uniform int u_count;
 uniform vec4 u_box[8]; uniform vec4 u_param[8]; uniform vec2 u_pivot[8];
+uniform vec4 u_cam; uniform float u_zoom;
 const float TAU = 6.28318530718;
+vec2 frameAt(vec2 q) { return (0.5 * u_size + (q - 0.5 * u_size) / u_zoom) / u_size; }
+// Camera offset in pixels for the point q: (depth - focus) * amplitude, so the focus depth stays still.
+vec2 parallax(vec2 q) {
+  float k = (texture2D(u_depth, frameAt(q)).r - u_cam.w) * u_cam.y, ph = TAU * u_cam.z * u_time;
+  if (u_cam.x < 1.5) return (q - 0.5 * u_size) / (0.5 * u_size.y) * k * (0.5 - 0.5 * cos(ph));
+  if (u_cam.x < 2.5) return vec2(sin(ph), 0.0) * k;
+  if (u_cam.x < 3.5) return vec2(0.0, sin(ph)) * k;
+  return vec2(sin(ph), 0.5 * (cos(ph) - 1.0)) * k;
+}
 float wave(float t, float c, float seed) {
   return sin(TAU * c * t + seed) * 0.6 + sin(TAU * c * 2.0 * t + seed * 1.7) * 0.3 + sin(TAU * c * 3.0 * t + seed * 2.9) * 0.1;
 }
@@ -45,11 +60,17 @@ void main() {
     else if (effect < 2.5) { float g = sin(TAU * c * u_time) * k * 0.006; s = pv + (p - pv) / (1.0 + vec2(g * 0.35, g)); }
     else if (effect < 3.5) s = pv + rot(p - pv, -sin(TAU * c * u_time) * k * 0.012);
     else if (effect < 4.5) s = p - vec2(0.0, sin(TAU * c * u_time) * k * 0.0015 * u_size.y);
-    else { float ph = fract(c * u_time); float shut = ph < 0.06 ? sin(3.14159265 * ph / 0.06) : 0.0;
+    else if (effect < 5.5) { float ph = fract(c * u_time); float shut = ph < 0.06 ? sin(3.14159265 * ph / 0.06) : 0.0;
       s = vec2(p.x, pv.y + (p.y - pv.y) / max(1.0 - 0.95 * shut * k / 10.0, 0.05)); }
+    else { vec2 dir = pv - (b.xy + 0.5 * b.zw); dir = length(dir) > 1.0 ? normalize(dir) : vec2(0.0, -1.0); vec2 n = vec2(-dir.y, dir.x);
+      float along = dot(p, dir) / u_size.y, across = dot(p, n) / u_size.y; // ripples travel toward the pivot
+      float ph = TAU * (along * 18.0 + 0.35 * sin(TAU * across * 6.0) - c * u_time), ph2 = TAU * (along * 41.0 - across * 9.0 - 2.0 * c * u_time);
+      s = p - (n * sin(ph) * 0.0006 + dir * sin(ph2) * 0.0003) * k * u_size.y; }
     shift += w * (s - p);
   }
-  gl_FragColor = texture2D(u_image, (p + shift) / u_size);
+  vec2 q = p + shift;
+  if (u_cam.y > 0.0) { vec2 target = q; for (int n = 0; n < 3; n++) q = target - parallax(q); } // invert the depth-dependent shift
+  gl_FragColor = texture2D(u_image, frameAt(q));
 }`;
 // Renders the still with the rig at loop phase t (0..1). Exported so QA can read exact pixels.
 export function createRenderer(canvas, source) {
@@ -60,16 +81,32 @@ export function createRenderer(canvas, source) {
   const program = gl.createProgram(); gl.attachShader(program, shader(gl.VERTEX_SHADER, VERTEX)); gl.attachShader(program, shader(gl.FRAGMENT_SHADER, FRAGMENT)); gl.linkProgram(program); gl.useProgram(program);
   const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const at = gl.getAttribLocation(program, 'p'); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
-  const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
-  for (const [key, value] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, key, value);
+  const texture = unit => {
+    const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+    for (const [key, value] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, key, value);
+    return t;
+  };
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  texture(0); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  const depthTexture = texture(1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
   const u = name => gl.getUniformLocation(program, name);
   const W = canvas.width, H = canvas.height;
-  gl.viewport(0, 0, W, H); gl.uniform2f(u('u_size'), W, H); gl.uniform1i(u('u_image'), 0);
+  gl.viewport(0, 0, W, H); gl.uniform2f(u('u_size'), W, H); gl.uniform1i(u('u_image'), 0); gl.uniform1i(u('u_depth'), 1);
+  let hasDepth = false;
   return {
     gl, width: W, height: H,
+    setDepth(depth) {
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, depthTexture);
+      if (depth) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, depth);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+      hasDepth = Boolean(depth);
+    },
     render(t, rig) {
+      // Amplitude is 0.4% of the frame height per strength step for a full near-to-far depth difference.
+      const cam = { ...defaultCamera, ...rig.camera }, on = hasDepth && cam.move !== 'none';
+      const amp = on ? cam.strength * 0.004 * H : 0, reach = amp * Math.max(cam.focus, 100 - cam.focus) / 100;
+      gl.uniform4f(u('u_cam'), moveIds.indexOf(cam.move), amp, cam.cycles, cam.focus / 100);
+      gl.uniform1f(u('u_zoom'), on ? 1 / (1 - 2 * reach / Math.min(W, H)) : 1);
       const boxes = new Float32Array(32), params = new Float32Array(32), pivots = new Float32Array(16), seconds = rig.duration_ms / 1000;
       rig.regions.slice(0, 8).forEach((r, i) => {
         boxes.set([r.x * W / SCALE, r.y * H / SCALE, r.w * W / SCALE, r.h * H / SCALE], i * 4);
@@ -128,16 +165,66 @@ function renderList() {
     row.append(head, sliders); list.append(row);
   });
 }
+const cameraOn = () => Boolean(draft.depth) && draft.camera.move !== 'none';
+function renderCamera() {
+  const box = $('#motion-camera'); box.replaceChildren();
+  const head = el('div', 'motion-row-head'); head.append(el('span', 'region-badge', '镜'));
+  const move = el('select'); move.setAttribute('aria-label', '镜头运动'); move.disabled = !draft.depth;
+  for (const [id, label] of Object.entries(cameraMoves)) move.add(new Option(id === 'none' ? '镜头 · 不动' : `镜头 · ${label}`, id));
+  move.value = draft.camera.move;
+  move.addEventListener('change', () => { draft.camera.move = move.value; summary(); });
+  const pick = el('button', 'text-button', draft.depth ? '换深度图' : '上传深度图'); pick.addEventListener('click', () => $('#motion-depth-input').click());
+  head.append(move, pick);
+  if (draft.depth) {
+    const remove = el('button', 'text-button', '移除');
+    remove.addEventListener('click', () => { draft.depth = null; draft.camera.move = 'none'; renderer.setDepth(null); renderCamera(); summary(); });
+    head.append(remove);
+  }
+  const sliders = el('div', 'motion-sliders');
+  for (const [field, label, min, max, step] of [['strength', '幅度', 1, 10, 1], ['cycles', '圈数', 1, 4, 1], ['focus', '焦点', 0, 100, 5]]) {
+    const wrap = el('label', '', label), input = el('input'), value = el('small', '', String(draft.camera[field]));
+    Object.assign(input, { type: 'range', min, max, step, value: draft.camera[field], disabled: !draft.depth }); input.setAttribute('aria-label', `镜头${label}`);
+    input.addEventListener('input', () => { draft.camera[field] = Number(input.value); value.textContent = input.value; });
+    wrap.append(input, value); sliders.append(wrap);
+  }
+  const hint = el('p', 'motion-hint', draft.depth
+    ? `深度图${draft.depth.filename ? '：' + draft.depth.filename : '已载入'}。焦点=不动的那一层（0 远、100 近），比焦点近的跟镜头走，远的反方向。`
+    : '2.5D 视差：上传一张同比例的深度图（白=近、黑=远，例如 Depth Anything 生成），再选镜头运动。');
+  box.append(head, sliders, hint);
+}
+async function loadDepth(mediaId, filename) {
+  const depth = new Image(); depth.src = `/media/${mediaId}`;
+  await depth.decode().catch(() => { throw new Error('深度图无法读取'); });
+  if (Math.abs(depth.naturalWidth / depth.naturalHeight - image.naturalWidth / image.naturalHeight) > 0.02 * image.naturalWidth / image.naturalHeight) {
+    throw new Error(`深度图比例 ${depth.naturalWidth}×${depth.naturalHeight} 跟原图 ${image.naturalWidth}×${image.naturalHeight} 不一致`);
+  }
+  renderer.setDepth(depth); draft.depth = { media_id: mediaId, filename };
+}
+async function uploadDepth(file) {
+  const result = await ctx.api(`/api/shots/${draft.shotId}/depth?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+  await loadDepth(result.media_id, result.filename);
+  if (draft.camera.move === 'none') draft.camera.move = 'push';
+  renderCamera(); summary(); ctx.toast('深度图已载入，记得保存设置');
+}
 function summary() {
-  $('#motion-summary').textContent = draft.regions.length ? `${draft.regions.length} 个动作区域 · 循环 ${draft.duration_ms / 1000} 秒。框外画面保持原图。` : '按住鼠标框出要动的地方（手、眼睛、头发、身体…），再选效果。';
-  $('#motion-export').disabled = !draft.regions.length;
+  const parts = [];
+  if (draft.regions.length) parts.push(`${draft.regions.length} 个动作区域`);
+  if (cameraOn()) parts.push(`镜头${cameraMoves[draft.camera.move]}`);
+  $('#motion-summary').textContent = parts.length
+    ? `${parts.join(' · ')} · 循环 ${draft.duration_ms / 1000} 秒。${cameraOn() ? '整张按深度视差移动，边缘略放大。' : '框外画面保持原图。'}`
+    : '按住鼠标框出要动的地方（手、眼睛、头发、身体…），再选效果；有深度图时也可以只加镜头运动。';
+  $('#motion-export').disabled = !parts.length;
 }
 function point(event) {
   const rect = $('#motion-layer').getBoundingClientRect(), clamp = v => Math.min(SCALE, Math.max(0, Math.round(v * SCALE)));
   return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
 }
 function rigPayload() {
-  return JSON.stringify({ source_take_id: draft.take.id, duration_ms: draft.duration_ms, regions: draft.regions.map(({ x, y, w, h, effect, strength, speed, feather, pivot_x, pivot_y }) => ({ x, y, w, h, effect, strength, speed, feather, pivot_x, pivot_y })) });
+  return JSON.stringify({
+    source_take_id: draft.take.id, duration_ms: draft.duration_ms,
+    regions: draft.regions.map(({ x, y, w, h, effect, strength, speed, feather, pivot_x, pivot_y }) => ({ x, y, w, h, effect, strength, speed, feather, pivot_x, pivot_y })),
+    depth_media_id: draft.depth?.media_id ?? null, camera: draft.depth ? draft.camera : { ...draft.camera, move: 'none' }
+  });
 }
 async function saveRig() {
   const shot = ctx.shotById(draft.shotId);
@@ -239,6 +326,10 @@ export function setupMotion(context) {
     const value = Math.round(Number($('#motion-duration').value) * 1000);
     draft.duration_ms = Math.min(10000, Math.max(1000, Number.isFinite(value) ? value : 4000)); $('#motion-duration').value = draft.duration_ms / 1000; summary();
   });
+  $('#motion-depth-input').addEventListener('change', event => {
+    const file = event.target.files[0]; event.target.value = '';
+    if (file && draft) ctx.action(() => uploadDepth(file));
+  });
   $('#motion-save').addEventListener('click', () => ctx.action(async () => { await saveRig(); ctx.toast('微动设置已保存'); }));
   $('#motion-export').addEventListener('click', () => {
     if (busy) return; busy = true;
@@ -264,18 +355,20 @@ async function open(shot) {
   const source = sourceTake(shot); if (!source) throw new Error('微动需要一张图片版本');
   image = new Image(); image.src = `/media/${source.take.media_id}`;
   await image.decode().catch(() => { throw new Error('图片无法读取'); });
-  draft = { shotId: shot.id, title: shot.title, take: source.take, duration_ms: source.rig?.duration_ms ?? 4000, regions: (source.rig?.regions ?? []).map(r => ({ ...r })), selected: null };
+  draft = { shotId: shot.id, title: shot.title, take: source.take, duration_ms: source.rig?.duration_ms ?? 4000, regions: (source.rig?.regions ?? []).map(r => ({ ...r })), selected: null,
+    depth: null, camera: { ...defaultCamera, ...source.rig?.camera } };
   const canvas = $('#motion-canvas');
   renderer = createRenderer(canvas, image);
+  if (source.rig?.depth_media_id) await loadDepth(source.rig.depth_media_id, '').catch(error => { draft.camera.move = 'none'; ctx.toast(error.message, true); });
   $('#motion-heading').textContent = `微动 · ${shot.title}`; $('#motion-duration').value = draft.duration_ms / 1000;
   playing = true; started = performance.now(); $('#motion-play').textContent = '❚❚';
-  renderLayer(); renderList(); summary();
+  renderLayer(); renderList(); renderCamera(); summary();
   $('#motion-dialog').showModal(); frame = requestAnimationFrame(loop);
 }
 export function bindMotionCard(card, shot) {
   const button = card.querySelector('.edit-motion'), source = sourceTake(shot);
-  const count = source?.rig?.regions.length || 0;
-  button.textContent = count ? `✦ 微动 · ${count}` : '✦ 微动';
+  const count = source?.rig?.regions.length || 0, camera = source?.rig?.camera?.move && source.rig.camera.move !== 'none';
+  button.textContent = ['✦ 微动', count && String(count), camera && '镜头'].filter(Boolean).join(' · ');
   button.disabled = !source;
   button.title = source ? '框出手、眼睛、头发等，让静图小幅动起来' : '微动需要一张图片版本';
   button.addEventListener('click', () => ctx.action(() => open(ctx.shotById(shot.id))));

@@ -19,6 +19,7 @@ import { buildManifest } from './src/export.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+const imageTypes = Object.fromEntries(Object.entries(types).filter(([, mime]) => mime.startsWith('image/')));
 const libraryTypes = { ...types, '.gif': 'image/gif', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.flac': 'audio/flac' };
 const MAX_UPLOAD = 1024 ** 3;
 const securityHeaders = {
@@ -198,6 +199,10 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
       }
       if ((m = /^\/api\/shots\/([\w-]+)\/snapshot$/.exec(path)) && req.method === 'POST') {
         return json(res, 201, store.addTake(m[1], (await body(req)).revision));
+      }
+      if ((m = /^\/api\/shots\/([\w-]+)\/depth$/.exec(path)) && req.method === 'POST') {
+        store.shot(m[1]);
+        return json(res, 201, await receive(req, url, imageTypes, '深度图支持 PNG、JPG、WebP', media => store.addMedia(m[1], media)));
       }
       if (((m = /^\/api\/shots\/([\w-]+)\/takes$/.exec(path)) || path === '/api/library/import') && req.method === 'POST') {
         const isLibrary = path === '/api/library/import';

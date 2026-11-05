@@ -1,6 +1,8 @@
-# 本地工作台架构 · v0.8
+# 本地工作台架构 · v0.9
 
 ## 目标与选择
+
+v0.9 在微动上加 2.5D 视差与流动，无 schema 变更：motion JSON 多了 depth_media_id（media 行，图片，POST /api/shots/:id/depth 上传，不建 take、不动 revision）和 camera（move none/push/pan/tilt/orbit、幅度 1–10、圈数 1–4 整数、焦点 0–100），旧 rig 正规化时补默认值；move≠none 必须有深度图。着色器先算区域位移，再对结果做视差：偏移 = (深度 − 焦点) × 幅度 × 镜头路径(t)，以 q = target − parallax(q) 迭代 3 次求反向映射，再按 1/(1 − 2·最大偏移/短边) 放大取样避免出边；镜头关闭时不进入这段，框外像素仍与原图一致。流动效果是两组沿支点方向行进的正弦波位移，时间频率为整数倍，循环无缝。
 
 v0.8 增加静图微动。schema v7（v6 升级前生成 schema-v6-before-v7.sqlite）给 shots 加 motion 栏：JSON 记录来源图片版本、循环长度（1–10 秒）和最多 8 个区域（画面 1/10000 坐标、效果、强度、速度、羽化、支点），随片段 revision 保存，服务端校验并正规化。public/motion.js 用 WebGL 片元着色器做反向映射：每个像素按各区域羽化权重累加位移，框外权重为 0，取样点落在原像素中心，所以框外像素与原图一致；效果以整数圈数周期运动，循环首尾相同。导出用 WebCodecs VideoEncoder（H.264 Baseline，无 B 帧）离线逐帧编码，public/mp4.js 手写单轨 MP4（ftyp/moov/mdat，stts 固定帧长、stss 关键帧、单 chunk），与机器速度无关；不支持时退回 MediaRecorder 实时录制。导出结果作为新 take 上传，原图保留为微动来源。
 

@@ -99,19 +99,54 @@ try {
   assert.equal(check.outsideDiff, 0, 'pixels outside the box are exactly the original');
   assert.ok(check.insideMoved > 50, 'the boxed hand actually moves: ' + check.insideMoved);
   assert.equal(check.seam, 0, 'loop start and end frames match');
+  // Flow: ripples inside the box only, still seamless.
+  await evaluate(`(() => { const s=document.querySelector('#motion-list select'); s.value='flow'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+  const flow = await evaluate(`(async () => {
+    const { testHooks } = await import('/motion.js'); const { renderer, draft } = testHooks(); const gl = renderer.gl;
+    const read = t => { renderer.render(t, draft); const out = new Uint8Array(540 * 960 * 4); gl.readPixels(0, 0, 540, 960, gl.RGBA, gl.UNSIGNED_BYTE, out); return out; };
+    const a = read(0.2), b = read(0.6), zero = read(0), one = read(1); let moved = 0, seam = 0, outside = 0;
+    for (let i = 0; i < a.length; i += 12) { const x = (i / 4) % 540, y = 959 - Math.floor(i / 4 / 540), inside = x >= 324 && x < 475 && y >= 634 && y < 768;
+      if (inside && a[i] !== b[i]) moved++; if (Math.abs(zero[i] - one[i]) > 1) seam++; if (!inside && a[i] !== b[i]) outside++; }
+    return { moved, seam, outside };
+  })()`);
+  assert.ok(flow.moved > 50, 'flow ripples the box: ' + flow.moved); assert.equal(flow.seam, 0, 'flow loops seamlessly'); assert.equal(flow.outside, 0, 'flow stays inside the box');
+  // 2.5D parallax: upload a depth map (near circle = head, far background) through the dialog's file input; the camera unlocks.
+  assert.equal(await evaluate(`document.querySelector('#motion-camera select').disabled`), true, 'camera needs a depth map');
+  await evaluate(`(async () => {
+    const c=document.createElement('canvas'); c.width=270; c.height=480; const g=c.getContext('2d');
+    const grad=g.createLinearGradient(0,0,0,480); grad.addColorStop(0,'#000'); grad.addColorStop(1,'#666'); g.fillStyle=grad; g.fillRect(0,0,270,480);
+    g.fillStyle='#fff'; g.beginPath(); g.arc(135,165,60,0,7); g.fill();
+    const blob=await new Promise(r=>c.toBlob(r,'image/png')); const t=new DataTransfer(); t.items.add(new File([blob],'hand-depth.png',{type:'image/png'}));
+    const input=document.querySelector('#motion-depth-input'); input.files=t.files; input.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  await until(`!document.querySelector('#motion-camera select').disabled && document.querySelector('#motion-camera select').value==='push' && ${idle}`);
+  await evaluate(`(() => { const s=document.querySelector('#motion-camera select'); s.value='pan'; s.dispatchEvent(new Event('change',{bubbles:true})); const f=[...document.querySelectorAll('#motion-camera input')][2]; f.value='100'; f.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  const camera = await evaluate(`(async () => {
+    const { testHooks } = await import('/motion.js'); const { renderer, draft } = testHooks(); const gl = renderer.gl;
+    const read = t => { renderer.render(t, draft); const out = new Uint8Array(540 * 960 * 4); gl.readPixels(0, 0, 540, 960, gl.RGBA, gl.UNSIGNED_BYTE, out); return out; };
+    const a = read(0.25), b = read(0.75), zero = read(0), one = read(1);
+    const changed = (u, v, x0, x1, y0, y1) => { let n = 0; for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) { const i = ((959 - y) * 540 + x) * 4; if (Math.abs(u[i] - v[i]) + Math.abs(u[i + 1] - v[i + 1]) > 6) n++; } return n; };
+    // Focus 100 = the white head stays put; the far background (left edge of the head) slides.
+    return { head: changed(a, b, 230, 310, 290, 370), edge: changed(a, b, 120, 170, 260, 400), seam: changed(zero, one, 0, 540, 0, 960) };
+  })()`);
+  assert.ok(camera.edge > 30, 'background slides against the head: ' + JSON.stringify(camera));
+  assert.ok(camera.head < camera.edge / 10, 'focus layer (head) stays nearly still: ' + JSON.stringify(camera));
+  assert.equal(camera.seam, 0, 'camera loop is seamless');
+  await evaluate(`(() => { const s=document.querySelector('#motion-list select'); s.value='tremble'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
   // Switch to sway, pick a pivot at the wrist, shorten the loop, save.
-  await evaluate(`(() => { const s=document.querySelector('.motion-row select'); s.value='sway'; s.dispatchEvent(new Event('change',{bubbles:true})); [...document.querySelectorAll('.motion-sliders button')][0].click(); })()`);
+  await evaluate(`(() => { const s=document.querySelector('.motion-row select'); s.value='sway'; s.dispatchEvent(new Event('change',{bubbles:true})); [...document.querySelectorAll('#motion-list .motion-sliders button')][0].click(); })()`);
   await until(`document.querySelector('#motion-layer').classList.contains('picking')`);
   const layer = await evaluate(`(() => { const r=document.querySelector('#motion-layer').getBoundingClientRect(); return {x:r.left+r.width*0.6,y:r.top+r.height*0.73}; })()`);
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...layer, button: 'left', buttons: 1, clickCount: 1 });
   await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...layer, button: 'left', buttons: 0, clickCount: 1 });
-  await evaluate(`(() => { const d=document.querySelector('#motion-duration'); d.value='2'; d.dispatchEvent(new Event('change',{bubbles:true})); const r=document.querySelector('.motion-sliders input'); r.value='7'; r.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await evaluate(`(() => { const d=document.querySelector('#motion-duration'); d.value='2'; d.dispatchEvent(new Event('change',{bubbles:true})); const r=document.querySelector('#motion-list .motion-sliders input'); r.value='7'; r.dispatchEvent(new Event('input',{bubbles:true})); })()`);
   await shoot('motion-dialog.png');
   await evaluate(`document.querySelector('#motion-save').click()`);
   const projectId = app.store.listProjects()[0].id;
   for (let n = 0; n < 30 && !app.store.detail(projectId).shots[0].motion; n++) await delay(100);
   const saved = JSON.parse(app.store.detail(projectId).shots[0].motion);
   assert.deepEqual([saved.duration_ms, saved.regions[0].effect, saved.regions[0].strength], [2000, 'sway', 7]);
+  assert.deepEqual(saved.camera, { move: 'pan', strength: 4, cycles: 1, focus: 100 }); assert.equal(app.store.media(saved.depth_media_id).filename, 'hand-depth.png');
   assert.ok(Math.abs(saved.regions[0].pivot_x - 6000) < 40 && Math.abs(saved.regions[0].pivot_y - 7300) < 40, 'pivot placed where clicked: ' + JSON.stringify(saved.regions[0]));
   // Export one loop; it becomes a new video take while the still stays as the rig's source.
   await until(`${idle}`);
@@ -124,18 +159,19 @@ try {
   // Optional: KEEP_MOTION_FILE=path keeps the exported MP4 for inspection with ffprobe/ffmpeg.
   if (process.env.KEEP_MOTION_FILE) { const { copyFile } = await import('node:fs/promises'); await copyFile(join(scratch, 'data', 'media', app.store.media(takes[0].media_id).stored_name), process.env.KEEP_MOTION_FILE); }
   assert.ok(Math.abs(duration - 2) < 0.05, 'exported loop is 2 s: ' + duration);
-  assert.match(await evaluate(`document.querySelector('.edit-motion').textContent`), /微动 · 1/);
+  assert.match(await evaluate(`document.querySelector('.edit-motion').textContent`), /微动 · 1 · 镜头/);
   // Reopening edits the original still, not the exported video.
   await evaluate(`document.querySelector('.edit-motion').click()`);
   await until(`document.querySelector('#motion-dialog').open && document.querySelectorAll('.motion-row').length===1 && ${idle}`);
   assert.equal(await evaluate(`document.querySelector('.motion-row select').value`), 'sway');
+  await until(`document.querySelector('#motion-camera select').value==='pan' && !document.querySelector('#motion-camera select').disabled`);
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await delay(300);
   const wide = await evaluate(`(() => { const d=document.querySelector('#motion-dialog'), limit=d.getBoundingClientRect().right; return [...d.querySelectorAll('*')].filter(e=>e.getBoundingClientRect().right>limit+1).map(e=>e.tagName+'.'+e.className+'#'+e.id+':'+Math.round(e.getBoundingClientRect().width)).slice(0,6); })()`);
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('#motion-dialog').scrollWidth <= document.querySelector('#motion-dialog').clientWidth + 1`), true, 'mobile dialog should not overflow: ' + JSON.stringify(wide));
   await shoot('motion-mobile.png');
   assert.deepEqual(browserErrors, []);
-  console.log(`PASS: micro-motion WebGL render (outside pixels exact, inside moves, seamless loop), mouse box, effect switch, pivot pick, save, ${takes[0].filename.split('.').pop()} export as new take (~${duration.toFixed(2)} s), reopen from the still, mobile. No model requests.`);
+  console.log(`PASS: micro-motion WebGL render (outside pixels exact, inside moves, seamless loop), flow, depth-map upload + parallax pan (focus layer still, background slides, seamless), mouse box, effect switch, pivot pick, save, ${takes[0].filename.split('.').pop()} export as new take (~${duration.toFixed(2)} s), reopen from the still, mobile. No model requests.`);
 } finally {
   if (socket) socket.close();
   if (chrome && chrome.exitCode === null) { const ended = new Promise(done => chrome.once('exit', done)); chrome.kill(); await Promise.race([ended, delay(3000)]); }

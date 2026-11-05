@@ -38,6 +38,14 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.9 2.5D parallax and flow — 2026-11-05
+
+`npm.cmd test`: 49/49. `motion.test.mjs` adds depth upload (image only, 404 for unknown shot, stored as media without a take or revision change), camera normalization and ranges (move, strength, integer cycles 1–4, focus), camera move without a depth map rejected, take ids rejected as depth maps, flow accepted, and `cli.mjs motion depth` (camera-only rig on the active still with a slow push; second call keeps regions and an existing camera; video shots refused).
+
+`node scripts/motion-browser-qa.mjs` (headless Chrome, SwiftShader WebGL, synthetic still + synthetic depth map): flow moves pixels inside the box only and loops seamlessly; the camera select is disabled until a depth map is uploaded through the dialog, then defaults to push; pan with focus 100 leaves the near "head" nearly still while the background next to it slides, with identical first/last loop frames; camera and depth survive save, export (~2.00 s MP4) and reopen; the card shows "微动 · 1 · 镜头". Regions, timeline and smoke browser QA still pass.
+
+Not verified: real depth maps (Depth Anything) on GA hero art, GPU browsers on the GA PC, edge stretching on large moves.
+
 ## v0.8 micro-motion — 2026-11-04
 
 `npm.cmd test`: 47/47. `motion.test.mjs` covers rig normalization (unknown fields dropped), rejection of non-image or foreign source takes, loop length, effect, box, strength/speed/feather/pivot ranges and more than 8 regions (no change on failure), stale revision, clearing, and v6→v7 migration with a snapshot.

@@ -5,6 +5,7 @@
 #motion-dialog{width:min(1000px,96vw)}.motion-frame canvas{width:auto;height:auto}#motion-layer{position:absolute;inset:0;cursor:crosshair;touch-action:none}#motion-layer.picking{cursor:cell}
 .motion-box{background:transparent}.motion-pivot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--accent);border:2px solid #101510;pointer-events:none}
 .motion-duration{display:flex;align-items:center;gap:6px;margin:0;font-size:11px;color:var(--muted)}.motion-duration input{width:70px;padding:6px}
+#motion-camera{margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.motion-hint{margin:0;font-size:11px;color:var(--muted);line-height:1.5}
 #motion-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}.motion-row{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.motion-row.selected{border-color:var(--accent)}
 .motion-row-head{display:flex;gap:8px;align-items:center}.motion-row-head select{flex:1;min-width:0;background:#11170f;color:var(--text);border:1px solid #3a4630;border-radius:5px;padding:7px;font-size:12px}
 .motion-sliders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end}.motion-sliders label{display:grid;grid-template-columns:auto 1fr auto;gap:6px;align-items:center;margin:0;font-size:11px}

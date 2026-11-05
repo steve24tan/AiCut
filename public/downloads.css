@@ -1,0 +1,6 @@
+#downloads-dialog{width:min(760px,96vw)}.downloads-form{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin:12px 0}.downloads-form input,.downloads-form select{min-width:0;background:#11170f;color:var(--text);border:1px solid #3a4630;border-radius:5px;padding:8px;font-size:12px}
+.downloads-tool{border:1px solid #80513a;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;color:var(--text)}
+#downloads-list{display:grid;gap:8px}.download-item{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:6px;min-width:0}.download-item.done{border-color:#4b6236}.download-item.failed{border-color:#80513a}
+.download-head{display:flex;gap:8px;align-items:center;min-width:0}.download-head strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.download-item small{color:var(--muted);overflow-wrap:anywhere;font-size:11px}
+.download-bar{height:4px;border-radius:2px;background:#232b1e;overflow:hidden}.download-bar span{display:block;height:100%;background:var(--accent);transition:width .3s}
+@media(max-width:600px){.downloads-form{grid-template-columns:minmax(0,1fr)}}

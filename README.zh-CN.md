@@ -95,6 +95,14 @@ npm.cmd start
 
 ## 验证
 
+### 链接下载（⤓ 链接下载，v0.10）
+
+顶部「⤓ 链接下载」：贴 YouTube／TikTok／抖音／B 站等视频页链接，选「视频 MP4 → 新片段」或「音频 MP3 → 素材库」。AiCut 不自己解析网站，而是调用这台电脑的 yt-dlp（合并 MP4、转 MP3 需要 ffmpeg）；视频优先 H.264 + AAC、最高 1080p，方便浏览器播放和导入剪映。完成后视频成为新片段（备注写上来源链接和作者），音频存入素材库（来源、作者栏位已填）。下载在后台进行，可取消，失败时显示 yt-dlp 的原因。
+
+- 安装：`winget install yt-dlp.yt-dlp Gyan.FFmpeg`，或用 `SHOT_YTDLP_BIN` 指定 yt-dlp.exe 完整路径、`SHOT_FFMPEG_BIN` 指定 ffmpeg 目录。
+- 抖音等要登录 cookie 的网站：设 `SHOT_YTDLP_COOKIES_BROWSER=firefox`（Chrome 开着时 cookie 常被锁）。
+- 网站改版会让下载失效，先 `yt-dlp -U` 更新。下载别人的内容请自行确认版权与平台条款。
+
 ### 2.5D 视差与流动（v0.9）
 
 微动对话框多了「镜」一栏：上传一张跟原图同比例的深度图（白=近、黑=远，例如 Depth Anything 生成），选镜头运动：推近、左右摇、上下摇、绕圈。每个像素按「自己的深度 − 焦点」移动，焦点那一层不动，近的跟镜头走、远的反方向，画面略放大避免露边；镜头在一个循环里转整数圈，导出仍是无缝循环。有深度图时可以只加镜头、不框区域。区域效果新增「流动」：框内波纹朝支点方向流，适合火焰、水、烟、旗帜。深度图存成素材，不算版本；agent 可用 `node cli.mjs motion depth SHOT_ID depth.png` 挂上去（没有镜头时自动设为慢推）。AiCut 自己不估深度。

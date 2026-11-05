@@ -1,6 +1,8 @@
-# 本地工作台架构 · v0.9
+# 本地工作台架构 · v0.10
 
 ## 目标与选择
+
+v0.10 增加链接下载（src/downloads.mjs、public/downloads.js），无 schema 变更。POST /api/projects/:id/downloads 校验 http(s) 链接与类型后，用 spawn（shell:false）启动本机 yt-dlp（PATH 或 SHOT_YTDLP_BIN，拒绝 .cmd/.bat/.ps1），链接放在 `--` 之后不会被当成参数；`--print after_move:AICUT_DONE %(.{filepath,…})j` 回报成品路径与标题/作者/来源，`--progress-template` 回报进度。成品必须位于 data/downloads/<任务id>/ 内且扩展名符合类型，算 sha256 后移入 media/，视频走 addShot + addTake 并把来源写进 notes，音频走素材库 add + update（source_url/author）；任务目录无论成败都删除。任务列表只在内存（最多同时 3 个、保留最近 30 个完成项），服务关闭时终止进行中的下载。
 
 v0.9 在微动上加 2.5D 视差与流动，无 schema 变更：motion JSON 多了 depth_media_id（media 行，图片，POST /api/shots/:id/depth 上传，不建 take、不动 revision）和 camera（move none/push/pan/tilt/orbit、幅度 1–10、圈数 1–4 整数、焦点 0–100），旧 rig 正规化时补默认值；move≠none 必须有深度图。着色器先算区域位移，再对结果做视差：偏移 = (深度 − 焦点) × 幅度 × 镜头路径(t)，以 q = target − parallax(q) 迭代 3 次求反向映射，再按 1/(1 − 2·最大偏移/短边) 放大取样避免出边；镜头关闭时不进入这段，框外像素仍与原图一致。流动效果是两组沿支点方向行进的正弦波位移，时间频率为整数倍，循环无缝。
 

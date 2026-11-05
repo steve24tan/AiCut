@@ -16,6 +16,7 @@ import { openVoices } from './src/voices.mjs';
 import { openTasks, taskKinds } from './src/tasks.mjs';
 import { createHerdr } from './src/herdr.mjs';
 import { buildManifest } from './src/export.mjs';
+import { openDownloads } from './src/downloads.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
@@ -68,7 +69,7 @@ async function sendFile(req, res, path, mime, allowRange = false) {
   await pipeline(createReadStream(path, { start, end }), res);
 }
 
-export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(root, 'data'), executor, herdr = createHerdr() } = {}) {
+export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(root, 'data'), executor, herdr = createHerdr(), ytdlp } = {}) {
   dataDir = resolve(dataDir);
   const mediaDir = join(dataDir, 'media');
   await mkdir(mediaDir, { recursive: true });
@@ -80,6 +81,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
   const voices = openVoices(store);
   const tasks = openTasks(store, audio, mediaDir);
   const runner = createRunner(jobs, dataDir, { executor });
+  const downloads = openDownloads(store, library, mediaDir, dataDir, { ytdlp });
   // One-line pointer typed into the agent's pane; the full request stays in AiCut for the agent to read.
   function pointer(kind, id, title) {
     const port = server.address().port, env = port === 4317 ? '' : `（先设置环境变量 SHOT_WORKBENCH_URL=http://127.0.0.1:${port}）`;
@@ -157,6 +159,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         return json(res, 202, job);
       }
       if (path === '/api/herdr/agents' && req.method === 'GET') return json(res, 200, await herdr.agents());
+      if (path === '/api/downloads' && req.method === 'GET') return json(res, 200, downloads.list(url.searchParams.get('project')));
       if (path === '/api/tasks' && req.method === 'GET') return json(res, 200, tasks.list(url.searchParams.get('project')));
       if ((m = /^\/api\/projects\/([\w-]+)\/tasks$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req), target = targetOf(payload.target);
@@ -164,6 +167,9 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         await dispatch(task.kind, task, target, tasks.fail);
         return json(res, 202, { ...tasks.get(task.id), pointer: pointer(task.kind, task.id, task.title) });
       }
+      if ((m = /^\/api\/projects\/([\w-]+)\/downloads$/.exec(path)) && req.method === 'POST') return json(res, 202, downloads.start(m[1], await body(req)));
+      if ((m = /^\/api\/downloads\/([\w-]+)$/.exec(path)) && req.method === 'GET') return json(res, 200, downloads.get(m[1]));
+      if ((m = /^\/api\/downloads\/([\w-]+)\/cancel$/.exec(path)) && req.method === 'POST') return json(res, 200, downloads.cancel(m[1]));
       if ((m = /^\/api\/tasks\/([\w-]+)$/.exec(path)) && req.method === 'GET') { const task = tasks.get(m[1]); return json(res, 200, { ...task, pointer: pointer(task.kind, task.id, task.title) }); }
       if ((m = /^\/api\/tasks\/([\w-]+)\/(claim|complete|fail|cancel)$/.exec(path)) && req.method === 'POST') {
         const payload = await body(req), id = m[1];
@@ -243,7 +249,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
         if (!media) throw new AppError(404, '素材不存在');
         return await sendFile(req, res, join(mediaDir, media.stored_name), media.mime, true);
       }
-      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'], '/regions.js': ['regions.js', 'text/javascript; charset=utf-8'], '/regions.css': ['regions.css', 'text/css; charset=utf-8'], '/timeline.js': ['timeline.js', 'text/javascript; charset=utf-8'], '/timeline.css': ['timeline.css', 'text/css; charset=utf-8'], '/voices.js': ['voices.js', 'text/javascript; charset=utf-8'], '/voices.css': ['voices.css', 'text/css; charset=utf-8'], '/agents.js': ['agents.js', 'text/javascript; charset=utf-8'], '/tasks.js': ['tasks.js', 'text/javascript; charset=utf-8'], '/motion.js': ['motion.js', 'text/javascript; charset=utf-8'], '/mp4.js': ['mp4.js', 'text/javascript; charset=utf-8'] };
+      const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/segments.js': ['segments.js', 'text/javascript; charset=utf-8'], '/jobs.js': ['jobs.js', 'text/javascript; charset=utf-8'], '/library.js': ['library.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/segments.css': ['segments.css', 'text/css; charset=utf-8'], '/jobs.css': ['jobs.css', 'text/css; charset=utf-8'], '/library.css': ['library.css', 'text/css; charset=utf-8'], '/regions.js': ['regions.js', 'text/javascript; charset=utf-8'], '/regions.css': ['regions.css', 'text/css; charset=utf-8'], '/timeline.js': ['timeline.js', 'text/javascript; charset=utf-8'], '/timeline.css': ['timeline.css', 'text/css; charset=utf-8'], '/voices.js': ['voices.js', 'text/javascript; charset=utf-8'], '/voices.css': ['voices.css', 'text/css; charset=utf-8'], '/agents.js': ['agents.js', 'text/javascript; charset=utf-8'], '/tasks.js': ['tasks.js', 'text/javascript; charset=utf-8'], '/motion.js': ['motion.js', 'text/javascript; charset=utf-8'], '/mp4.js': ['mp4.js', 'text/javascript; charset=utf-8'], '/downloads.js': ['downloads.js', 'text/javascript; charset=utf-8'], '/downloads.css': ['downloads.css', 'text/css; charset=utf-8'] };
       if (files[path] && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, join(root, 'public', files[path][0]), files[path][1]);
       throw new AppError(404, '找不到这个地址');
     } catch (error) {
@@ -253,7 +259,7 @@ export async function createApp({ dataDir = process.env.SHOT_DATA_DIR || join(ro
     }
   });
   server.requestTimeout = 30 * 60 * 1000;
-  return { server, store, jobs, runner, library, regions, audio, voices, tasks, dataDir, async close() { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
+  return { server, store, jobs, runner, library, regions, audio, voices, tasks, downloads, dataDir, async close() { downloads.close(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await runner.close(); store.close(); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

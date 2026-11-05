@@ -38,6 +38,14 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.10 link downloads — 2026-11-05
+
+`npm.cmd test`: 54/54. `downloads.test.mjs` runs a fake yt-dlp (tests/fixtures/fake-ytdlp.mjs): video → new shot with H.264 MP4 take, source/uploader in notes, sanitized title, media bytes intact, download folder removed; audio → library asset with title, mime, source URL and author, no shot; yt-dlp ERROR line surfaced on failure; a reported file outside the job folder and a non-MP4 result are refused; progress parsed while running; cancel; nothing left in media/ or downloads/ after failures; bad URL, kind, unknown project/download, and missing yt-dlp (503, `available:false`) rejected; discovery refuses relative paths and shell wrappers; arguments end with `--` URL, video merges to MP4, audio extracts MP3, cookies/ffmpeg env flags.
+
+`node scripts/downloads-browser-qa.mjs` (headless Chrome, fake yt-dlp, no network): button disabled without a project, failure reason shown, cancel, video appears as a new shot with completion toast, audio lands in the library, list of 4, no overflow at 390 px, no runtime exceptions. Motion, regions, timeline and smoke QA still pass.
+
+Not verified: a real yt-dlp run. Downloading and executing yt-dlp.exe was blocked on the Support PC, so the `--print`/`--progress-template` output format, ffmpeg merge/MP3 extraction and real YouTube / TikTok / 抖音 / Bilibili links still need a check on the GA PC.
+
 ## v0.9 2.5D parallax and flow — 2026-11-05
 
 `npm.cmd test`: 49/49. `motion.test.mjs` adds depth upload (image only, 404 for unknown shot, stored as media without a take or revision change), camera normalization and ranges (move, strength, integer cycles 1–4, focus), camera move without a depth map rejected, take ids rejected as depth maps, flow accepted, and `cli.mjs motion depth` (camera-only rig on the active still with a slow push; second call keeps regions and an existing camera; video shots refused).

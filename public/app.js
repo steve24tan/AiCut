@@ -6,6 +6,7 @@ import { setupEditor, renderEditor, editorBusy, audioState, currentPlayhead, sho
 import { setupTasks } from './tasks.js';
 import { setupMotion, bindMotionCard } from './motion.js';
 import { setupVoices, bindLinesCard, linesText } from './voices.js';
+import { setupDownloads } from './downloads.js';
 const $ = selector => document.querySelector(selector);
 const labels = { todo: '待生成', revise: '待微调', review: '待检查', approved: '已确认' };
 let projects = [], project = null, filter = 'all', busy = false, uploadTarget = null;
@@ -109,7 +110,7 @@ function focusShot(id) {
 function render() {
   $('#project-title').textContent = project?.title || '你的下一段，从这里开始。';
   $('#project-description').textContent = project ? '逐段查看，随手记下修改，再把新版放回来。' : '每个片段，都有自己的想法、修改与版本。';
-  for (const id of ['voices', 'export', 'import-files', 'add-shot']) $('#' + id).disabled = !project;
+  for (const id of ['voices', 'export', 'import-files', 'downloads', 'add-shot']) $('#' + id).disabled = !project;
   $('#total').textContent = project?.shots.length || 0;
   $('#empty').hidden = Boolean(project?.shots.length);
   $('#empty-create').textContent = project ? '添加第一个片段' : '创建第一个项目';
@@ -230,12 +231,14 @@ $('#export').addEventListener('click', () => action(async () => {
   const link = document.createElement('a'); link.href = url; link.download = 'shot-revisions.md'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('已导出文字清单；素材备份请看使用说明');
 }));
-$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n8. ▣ 框选：在画面上拖出要改的区域，每个框写一句要求；复制请求和 CLI 任务会写明只改框内。可下载标注图和 mask。\n9. 时间线：上面视频轨、下面音轨。拖动移动、拖边缘裁剪、「▭ 框选时间」在波形上标出要改的段落；空格播放。每段音频保留所有版本，可 A/B 试听。\n10. 台词与角色声音：每段写台词，「角色声音」设定 voice_id；「生成配音」交给 agent。\n11. 交给 agent：选 herdr 里的 agent，或「手动」复制指令。agent 处理完把新音频导回为新版本。「AI 任务」查看进度。\n12. 导出剪映：下载时间线清单，再运行 scripts/export_jianying.py 生成剪映草稿。\n13. ✦ 微动：图片片段框出手、眼睛、头发等，选颤抖／震动／呼吸／摆动／漂浮／眨眼，导出无缝循环视频为新版本；框外保持原图。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n核心管理可离线使用；可选 CLI 作业使用其订阅账号与网络连接。`, 'AiCut v0.8.0 · 本地分段创作工作台'));
+$('#help').addEventListener('click', () => textDialog('本地使用与备份', `1. 添加片段：可以先写文字，也可以一次导入多个视频／图片。\n2. 编辑 Prompt 和修改要求：停止输入约 0.65 秒后保存。顶部会提示保存状态。\n3. 复制本段修改请求：包含项目、片段、采用版本、当前草稿和修改要求。\n4. 导入新版：为当前草稿保存一个带素材的只读版本，旧版继续保留。\n5. 存快照：为当前文字存一个不带素材的版本。\n6. 选择采用版本：只切换预览，不覆盖下一版草稿。\n7. 视频卡片点 ✂ 分段：均分或在播放位置添加边界，各段共用原文件。调整范围存新版；单段循环可取消。目前不导出独立剪辑文件。\n8. ▣ 框选：在画面上拖出要改的区域，每个框写一句要求；复制请求和 CLI 任务会写明只改框内。可下载标注图和 mask。\n9. 时间线：上面视频轨、下面音轨。拖动移动、拖边缘裁剪、「▭ 框选时间」在波形上标出要改的段落；空格播放。每段音频保留所有版本，可 A/B 试听。\n10. 台词与角色声音：每段写台词，「角色声音」设定 voice_id；「生成配音」交给 agent。\n11. 交给 agent：选 herdr 里的 agent，或「手动」复制指令。agent 处理完把新音频导回为新版本。「AI 任务」查看进度。\n12. 导出剪映：下载时间线清单，再运行 scripts/export_jianying.py 生成剪映草稿。\n13. ✦ 微动：图片片段框出手、眼睛、头发等，选颤抖／震动／呼吸／摆动／漂浮／眨眼／流动，导出无缝循环视频为新版本；框外保持原图。上传深度图（白近黑远）还可以加 2.5D 镜头：推近、摇、绕圈。
+14. ⤓ 链接下载：贴 YouTube／TikTok／抖音／B 站链接，用本机 yt-dlp（加 ffmpeg）下载；视频成为新片段，音频存入素材库，来源会记下。抖音通常要设 SHOT_YTDLP_COOKIES_BROWSER=firefox。\n\n数据位置：项目目录下 data/（SQLite 数据库与 media/ 素材）。\n备份：在项目目录运行 npm run backup。备份写入 backups/ 的时间戳目录。\n恢复：先停止服务，再把完整备份目录复制为一个新的数据目录，用 SHOT_DATA_DIR 指向它。不要只恢复 SQLite 文件。\n\n导出修改清单仅导出文字，不包含素材，不能替代完整备份。\n支持 MP4、WebM、MOV、PNG、JPG、WebP；视频能否播放取决于浏览器编码支持。\n核心管理可离线使用；可选 CLI 作业使用其订阅账号与网络连接。`, 'AiCut v0.10.0 · 本地分段创作工作台'));
 window.addEventListener('beforeunload', event => {
   if ([...edits.values()].some(e => e.saved < e.seq || e.running) || busy || editorBusy()) { event.preventDefault(); event.returnValue = ''; }
 });
 setupRegions({ action, api, toast, shotById, reload: load });
 setupMotion({ action, api, toast, shotById, reload: load });
+setupDownloads({ action, api, toast, getProject: () => project, reload: load });
 setupEditor({ action, api, toast, copy, focusShot, busy: () => busy });
 setupVoices({ action, api, toast, markEdit, getProject: () => project, reload: load });
 setupTasks({ action, api, toast, copy, textDialog, getProject: () => project, getAudio: audioState, getPlayhead: currentPlayhead, shotStart });

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/regions.css">
   <link rel="stylesheet" href="/timeline.css">
   <link rel="stylesheet" href="/voices.css">
+  <link rel="stylesheet" href="/downloads.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -24,7 +25,7 @@
   <main>
     <header class="topbar"><span>工作空间 <span class="slash">/</span> 分镜工作台</span><button id="toggle-library" aria-pressed="false">▦ 素材库扩展</button><span id="save-state" role="status">正在连接本地服务…</span></header>
     <section class="workspace">
-      <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="voices" disabled title="角色与配音声音对照表">角色声音</button><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
+      <div class="heading"><div><div class="eyebrow">ONE SHOT AT A TIME</div><h1 id="project-title">你的下一段，从这里开始。</h1><p id="project-description">每个片段，都有自己的想法、修改与版本。</p></div><div class="toolbar"><button id="voices" disabled title="角色与配音声音对照表">角色声音</button><button id="export" disabled>导出修改清单</button><button id="import-files" disabled>导入素材</button><button id="downloads" disabled title="贴 YouTube / TikTok / 抖音 / B 站链接，用本机 yt-dlp 下载">⤓ 链接下载</button><button id="add-shot" class="primary" disabled>＋ 添加片段</button></div></div>
       <div class="board-bar"><div class="filters" role="group" aria-label="按状态筛选"><button data-filter="all" class="selected">全部片段 <span id="total">0</span></button><button data-filter="revise">待微调</button><button data-filter="approved">已确认</button></div><span class="board-hint">编号随顺序更新 · 用箭头调整顺序</span></div>
       <nav id="timeline" class="timeline" aria-label="片段导航"></nav>
       <section id="editor" class="editor" hidden aria-label="时间线">
@@ -119,6 +120,18 @@
     <label>交给谁<select id="music-target"></select></label>
     <div class="dialog-actions"><button type="button" data-close>取消</button><button class="primary" type="submit">推送生成任务 →</button></div>
   </form></dialog>
+  <dialog id="downloads-dialog">
+    <div class="dialog-head"><h2>链接下载</h2><button data-close class="icon" aria-label="关闭">×</button></div>
+    <p>贴上视频页链接，用这台电脑的 yt-dlp 下载。视频成为新片段，音频存入素材库；来源链接和作者会记下来。下载别人的内容请自行确认版权和平台条款。</p>
+    <p id="downloads-tool" class="downloads-tool" hidden></p>
+    <form id="downloads-form" class="downloads-form">
+      <input id="downloads-url" type="url" required maxlength="2000" placeholder="https://www.youtube.com/watch?v=… / tiktok.com / douyin.com / bilibili.com" aria-label="视频链接" autocomplete="off">
+      <select id="downloads-kind" aria-label="下载类型"><option value="video">视频 MP4 → 新片段</option><option value="audio">音频 MP3 → 素材库</option></select>
+      <button class="primary" type="submit">下载</button>
+    </form>
+    <div id="downloads-list"></div>
+    <div class="dialog-actions"><button data-close>关闭</button></div>
+  </dialog>
   <dialog id="tasks-dialog">
     <div class="dialog-head"><h2>AI 音频任务</h2><button data-close class="icon" aria-label="关闭">×</button></div>
     <p>推送给 herdr agent 或手动复制指令的任务。agent 用 cli.mjs 领取、导回音频并回报结果；新音频不会覆盖旧版本。</p>

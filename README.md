@@ -108,6 +108,14 @@ CLI-specific checks and limitations are recorded in [CLI verification](docs/CLI_
 - Ordering uses arrow buttons. Parallel take comparison, encoded clip export, folder watching and portable project import are planned, not implemented.
 - Designed for one user on one computer. Multi-user authentication and network hosting are outside the current scope.
 
+## Link downloads (⤓ 链接下载, v0.10)
+
+**⤓ 链接下载** in the toolbar takes a YouTube / TikTok / 抖音 / Bilibili page URL and a choice of MP4 → new shot or MP3 → library. AiCut does not parse sites itself: it runs the yt-dlp installed on this computer (ffmpeg is needed to merge MP4 and extract MP3), preferring H.264 + AAC up to 1080p so the result plays in browsers and imports into 剪映. A finished video becomes a new shot whose notes carry the source URL and uploader; audio becomes a library asset with source and author filled in. Downloads run in the background, can be cancelled, and show yt-dlp's own error on failure.
+
+- Install with `winget install yt-dlp.yt-dlp Gyan.FFmpeg`, or point `SHOT_YTDLP_BIN` at yt-dlp.exe and `SHOT_FFMPEG_BIN` at the ffmpeg folder.
+- Sites that need login cookies (e.g. 抖音): set `SHOT_YTDLP_COOKIES_BROWSER=firefox` (Chrome locks its cookie store while open).
+- Site changes break extractors; run `yt-dlp -U` first. Respect copyright and platform terms for content you do not own.
+
 ## 2.5D parallax and flow (v0.9)
 
 The micro-motion dialog gains a camera row: upload a depth map with the still's aspect ratio (white = near, e.g. from Depth Anything) and pick push, pan, tilt or orbit. Each pixel shifts by its depth minus the focus depth, so the focus layer stays put, nearer layers follow the camera and farther ones move against it; a slight zoom hides the shifted edges. The camera completes whole cycles per loop, so exports still loop seamlessly, and a camera-only rig needs no boxes. A new region effect, flow, sends ripples toward the pivot for fire, water, smoke or flags. Depth maps are stored as media, not takes; agents attach one with `node cli.mjs motion depth SHOT_ID depth.png` (a still camera becomes a slow push). AiCut does not estimate depth itself.

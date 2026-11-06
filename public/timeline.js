@@ -508,10 +508,45 @@ export function setupEditor(context) {
     if (event.code !== 'Space' || !project || event.target.matches?.('input,textarea,select,button') || document.querySelector('dialog[open]')) return;
     event.preventDefault(); $('#editor-play').click();
   });
+  setupMonitorSize();
   let resizeWidth = 0;
   new ResizeObserver(() => { const w = $('#editor-scroll').clientWidth; if (Math.abs(w - resizeWidth) > 40) { resizeWidth = w; render(); } }).observe($('#editor-scroll'));
   // Pick up versions imported by an agent through cli.mjs while the page is idle.
   setInterval(() => { if (project && !document.hidden && !ctx.busy() && !editing() && !document.querySelector('dialog[open]')) refreshAudio().catch(() => {}); }, 2000);
+}
+// Preview monitor: drag its right edge, toggle ⤢ big / normal, ⛶ or double-click for fullscreen.
+const MONITOR_KEY = 'shot-workbench:monitor-width', MONITOR_MIN = 200;
+function setMonitorWidth(px, save = true) {
+  const main = $('#editor .editor-main'), max = Math.max(MONITOR_MIN, (main?.clientWidth || 1200) * 0.75);
+  const width = Math.round(Math.max(MONITOR_MIN, Math.min(max, px)));
+  main?.style.setProperty('--monitor-w', width + 'px');
+  $('#monitor-bigger').textContent = width > MONITOR_MIN + 20 ? '⤡' : '⤢';
+  $('#monitor-bigger').title = width > MONITOR_MIN + 20 ? '还原预览大小' : '放大预览（拖右边缘也可调宽度）';
+  if (save) { try { localStorage.setItem(MONITOR_KEY, String(width)); } catch { /* Optional persistence. */ } }
+  return width;
+}
+function setupMonitorSize() {
+  const monitor = $('#editor-monitor'), handle = $('#monitor-resize');
+  let saved = MONITOR_MIN; try { saved = Number(localStorage.getItem(MONITOR_KEY)) || MONITOR_MIN; } catch { /* Optional persistence. */ }
+  setMonitorWidth(saved, false);
+  $('#monitor-bigger').addEventListener('click', () => {
+    const current = monitor.getBoundingClientRect().width, main = $('#editor .editor-main').clientWidth;
+    setMonitorWidth(current > MONITOR_MIN + 20 ? MONITOR_MIN : main * 0.55);
+  });
+  const full = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else monitor.requestFullscreen?.().catch(() => ctx.toast('浏览器不允许全屏', true));
+  };
+  $('#monitor-full').addEventListener('click', full);
+  monitor.addEventListener('dblclick', event => { if (!event.target.closest('button,.monitor-resize')) full(); });
+  handle.addEventListener('dblclick', () => setMonitorWidth(MONITOR_MIN));
+  handle.addEventListener('pointerdown', event => {
+    event.preventDefault(); handle.setPointerCapture(event.pointerId);
+    const left = monitor.getBoundingClientRect().left;
+    const move = e => setMonitorWidth(e.clientX - left, false);
+    const up = e => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); setMonitorWidth(e.clientX - left); };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up);
+  });
 }
 export function audioState() { return audio; }
 export function currentPlayhead() { return playhead; }

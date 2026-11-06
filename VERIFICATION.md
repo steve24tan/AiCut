@@ -38,6 +38,12 @@ Browser automation requires an environment that allows Chrome child processes an
 - Test servers shut down after validation. Start the real workspace with `start.cmd`; its data starts empty.
 - The initial release passed GitHub Actions on Node 24 for Windows and Linux. Subsequent commit results appear in GitHub Actions.
 
+## v0.11 library episode folders and larger preview — 2026-11-06
+
+`npm.cmd test`: 54/54 (no server changes beyond serving `library-groups.js`).
+
+`node scripts/library-groups-browser-qa.mjs` (headless Chrome, synthetic PNGs, no network): library assets grouped by episode with the newest episode first and 其他 last, versions in numeric descending order (v12, v11, v10, v2, v1), older episodes folded by default and fold state remembered after reload, search opens every matching folder, image viewer dialog; preview monitor ⤢ enlarges to about half width with 16:9 height, edge drag resizes, width remembered after reload, ⤡ restores, no runtime exceptions. `browser-smoke.mjs` and `timeline-browser-qa.mjs` still pass.
+
 ## v0.10 link downloads — 2026-11-05
 
 `npm.cmd test`: 54/54. `downloads.test.mjs` runs a fake yt-dlp (tests/fixtures/fake-ytdlp.mjs): video → new shot with H.264 MP4 take, source/uploader in notes, sanitized title, media bytes intact, download folder removed; audio → library asset with title, mime, source URL and author, no shot; yt-dlp ERROR line surfaced on failure; a reported file outside the job folder and a non-MP4 result are refused; progress parsed while running; cancel; nothing left in media/ or downloads/ after failures; bad URL, kind, unknown project/download, and missing yt-dlp (503, `available:false`) rejected; discovery refuses relative paths and shell wrappers; arguments end with `--` URL, video merges to MP4, audio extracts MP3, cookies/ffmpeg env flags.

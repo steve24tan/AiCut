@@ -1,5 +1,9 @@
 let ctx, enabled = false, assets = [], target = null, editing = null, linking = null;
+import { groupAssets } from './library-groups.js';
 const $ = selector => document.querySelector(selector);
+const GROUPS_KEY = 'shot-workbench:library-groups';
+function groupState() { try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}'); } catch { return {}; } }
+function saveGroupState(key, open) { try { const state = groupState(); state[key] = open; localStorage.setItem(GROUPS_KEY, JSON.stringify(state)); } catch { /* Optional persistence. */ } }
 function media(asset) {
   const tag = asset.mime.startsWith('audio/') ? 'audio' : asset.mime.startsWith('video/') ? 'video' : 'img';
   const element = document.createElement(tag); element.src = `/media/${asset.media_id}`;
@@ -42,7 +46,9 @@ export async function setupLibrary(context) {
       $('#reference-dialog').close();await ctx.reload(shot.project_id);ctx.toast('参考已关联到这一段；原视频保持不变');
     });
   });
-  for(const id of ['asset-dialog','reference-dialog'])$('#'+id).addEventListener('close',()=>stop($('#'+id)));
+  for(const id of ['asset-dialog','reference-dialog','viewer-dialog'])$('#'+id).addEventListener('close',()=>stop($('#'+id)));
+  $('#viewer-dialog').addEventListener('click',event=>{if(event.target.id==='viewer-dialog'||event.target.id==='viewer-stage')$('#viewer-dialog').close();});
+  $('#viewer-full').addEventListener('click',()=>$('#viewer-stage').firstElementChild?.requestFullscreen?.().catch(()=>{}));
   if(enabled) await refreshLibrary();
 }
 export async function refreshLibrary() { assets=await ctx.api('/api/library/assets');renderAssets(); }
@@ -64,7 +70,20 @@ function renderAssets() {
   const query=$('#library-search').value.trim().toLocaleLowerCase(), favorite=$('#library-favorites').checked;
   const filtered=assets.filter(asset=>(!favorite||asset.favorite)&&[asset.title,...asset.tags].join(' ').toLocaleLowerCase().includes(query));
   if(!filtered.length){const empty=document.createElement('p');empty.className='library-empty';empty.textContent=assets.length?'没有匹配的素材。':'拖入音效、meme 图片或短视频，建立自己的感觉库。';container.append(empty);}
-  for(const asset of filtered){
+  const state=groupState(), groups=groupAssets(filtered);
+  groups.forEach((group,index)=>{
+    const details=document.createElement('details');details.className='library-group';details.dataset.group=group.key;
+    // Default: newest episode and the unsorted pile open, older episodes folded. A search opens every match.
+    details.open=query?true:(state[group.key]??(index===0||group.episode==null));
+    details.addEventListener('toggle',()=>{if(!query)saveGroupState(group.key,details.open);});
+    const summary=document.createElement('summary');summary.innerHTML='<span></span><small></small>';
+    summary.querySelector('span').textContent=group.label;summary.querySelector('small').textContent=`${group.items.length} 个`;
+    const list=document.createElement('div');list.className='library-group-items';
+    details.append(summary,list);container.append(details);
+    for(const asset of group.items)list.append(assetCard(asset));
+  });
+}
+function assetCard(asset) {
     const item=document.createElement('article');item.className='library-asset';item.draggable=true;item.dataset.assetId=asset.id;
     item.addEventListener('dragstart',event=>{event.dataTransfer.setData('application/x-shot-asset',asset.id);event.dataTransfer.effectAllowed='copy';});
     const title=document.createElement('strong');title.textContent=asset.title;
@@ -77,8 +96,16 @@ function renderAssets() {
     });
     const add=document.createElement('button');add.textContent='添加到当前段';add.addEventListener('click',()=>openReference(target,asset));
     const download=document.createElement('a');download.textContent='下载原素材';download.href=`/media/${asset.media_id}`;download.download=asset.filename;
-    buttons.append(favoriteButton,info,add,download);item.append(title,media(asset),tags,buttons);container.append(item);
-  }
+    buttons.append(favoriteButton,info,add,download);
+    const preview=media(asset);
+    if(preview.tagName==='IMG'){preview.title='点击放大';preview.addEventListener('click',()=>openViewer(asset));}
+    item.append(title,preview,tags,buttons);return item;
+}
+// Full-window viewer for a library image or video.
+function openViewer(asset) {
+  const dialog=$('#viewer-dialog');$('#viewer-title').textContent=asset.title;
+  const element=media(asset);if(element.tagName==='VIDEO')element.autoplay=true;
+  $('#viewer-stage').replaceChildren(element);dialog.showModal();
 }
 function chooseTarget(shot) { target=shot.id;$('#library-target').textContent=`当前段：${shot.title} · 也可拖到其他段`; }
 function openReference(shotId,asset,ref=null) {

@@ -37,7 +37,7 @@
           <input id="editor-files" type="file" accept=".mp3,.wav,.ogg,.m4a,.flac" multiple hidden>
         </div>
         <div class="editor-main">
-          <div id="editor-monitor" class="editor-monitor"><video muted playsinline preload="auto" hidden></video><img alt="当前画面" hidden><div class="monitor-empty"></div></div>
+          <div id="editor-monitor" class="editor-monitor" title="双击全屏"><video muted playsinline preload="auto" hidden></video><img alt="当前画面" hidden><div class="monitor-empty"></div><div class="monitor-tools"><button id="monitor-bigger" class="icon" title="放大预览（拖右边缘也可调宽度）" aria-label="放大预览">⤢</button><button id="monitor-full" class="icon" title="全屏（双击画面也可，Esc 退出）" aria-label="全屏预览">⛶</button></div><div id="monitor-resize" class="monitor-resize" role="separator" aria-orientation="vertical" aria-label="拖动调整预览宽度" title="拖动调整预览宽度，双击还原"></div></div>
           <div class="editor-tracks">
             <div class="editor-head-column"><div class="ruler-head"></div><div id="editor-heads"></div></div>
             <div id="editor-scroll" class="editor-scroll"><div id="editor-canvas" class="editor-canvas"><canvas id="editor-ruler" aria-label="时间尺，点击或拖动定位"></canvas><div id="editor-lanes"></div></div></div>
@@ -64,6 +64,7 @@
     <div id="library-assets"></div>
     <p class="library-footnote">可直接拖入本地文件。关闭扩展不删除素材或关联。本版仅试听与参考关联，不做混音导出。</p>
   </aside>
+  <dialog id="viewer-dialog" class="viewer-dialog"><div class="dialog-head"><h2 id="viewer-title"></h2><div><button id="viewer-full" class="icon" title="全屏" aria-label="全屏">⛶</button><button data-close class="icon" aria-label="关闭">×</button></div></div><div id="viewer-stage" class="viewer-stage"></div></dialog>
   <dialog id="asset-dialog"><form id="asset-form">
     <div class="dialog-head"><h2>素材信息</h2><button type="button" data-close class="icon" aria-label="关闭">×</button></div>
     <div id="asset-preview" class="asset-preview"></div>
